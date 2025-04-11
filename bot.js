@@ -1,21 +1,70 @@
-const {
+import {
   Client,
   GatewayIntentBits,
+  Events,
   REST,
   Routes,
   SlashCommandBuilder,
   EmbedBuilder,
-} = require("discord.js");
-require("dotenv").config();
+  ThreadAutoArchiveDuration,
+  PermissionFlagsBits,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder,
+  AttachmentBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} from "discord.js";
+import fetch from "node-fetch";
+import { PythonShell } from "python-shell";
+import { exec } from "child_process";
+import fs from "fs";
+import path from "path";
+import mentionRelay from './mentionRelay.js'; // adjust path if needed
+import dotenv from "dotenv";
+dotenv.config();
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.MessageContent,  // Ensure this is enabled
+    GatewayIntentBits.DirectMessages,  // Added for listening to DMs
+    GatewayIntentBits.MessageContent,  // Make sure MessageContent intent is on
+  ],
+  partials: [
+    'CHANNEL',  // Allows access to partials for channels, needed for DMs
+    'MESSAGE',  // Added for message partials, ensures the bot can respond to DMs and missing messages
   ],
 });
 
+
+// Log when the bot is ready
+client.once('ready', () => {
+  console.log('Bot is ready!');
+});
+
+// Add logging to see if the message event is triggered
+client.on(Events.MessageCreate, (message) => {
+  console.log(`Message received: ${message.content}`);
+  if (message.author.bot) return; // Avoid bot triggering itself
+  console.log(`Message from ${message.author.tag} in ${message.guild ? message.guild.name : 'DM'}`);
+});
+
+// Listen for mentions and forward the message to the specified user
+client.on(mentionRelay.name, mentionRelay.execute);
+
+// Set up reply listener
+mentionRelay.listenToReplies(client);
+
+const activeChallenges = new Map(); // Store active challenges
+let challengeData = {
+  admin: null,
+  submissions: [],
+  threadId: null,
+  challengeEndTime: null,
+};
 const serviceDocs = {
   "Node.js": "https://nodejs.org/en/docs/",
   Express: "https://expressjs.com/en/starter/installing.html",
@@ -288,29 +337,6 @@ const allCommands = [
     execute: quote,
   },
   {
-    commandName1: "snippet",
-    description: "Get example code for a concept",
-    options: [
-      {
-        type: "string",
-        name: "concept",
-        description: "The concept of the code snippet",
-        required: true,
-        choices: [
-          { name: "Variables", value: "variables" },
-          { name: "Data Types", value: "data types" },
-          { name: "Functions", value: "functions" },
-          { name: "Loops", value: "loops" },
-          { name: "Conditionals", value: "conditionals" },
-          { name: "Arrays", value: "arrays" },
-          { name: "Objects", value: "objects" },
-          { name: "Classes", value: "classes" },
-        ],
-      },
-    ],
-    execute: snippet,
-  },
-  {
     commandName1: "doc",
     description: "Get documentation link for a service",
     options: [
@@ -337,6 +363,126 @@ const allCommands = [
       },
     ],
     execute: docService,
+  },
+  {
+    commandName1: "suggest",
+    description: "Suggest something to a user",
+    options: [
+      {
+        type: "user",
+        name: "user",
+        description: "The user to suggest to",
+        required: true,
+      },
+      {
+        type: "string",
+        name: "advice",
+        description: "The advice to give",
+        required: true,
+      },
+    ],
+    execute: suggest,
+  },
+  {
+    commandName1: "snippet",
+    description: "Get example code for a concept",
+    options: [
+      {
+        type: "string",
+        name: "concept",
+        description: "The concept of the code snippet",
+        required: true,
+        choices: [
+          { name: "Variables", value: "variables" },
+          { name: "Data Types", value: "data types" },
+          { name: "Functions", value: "functions" },
+          { name: "Loops", value: "loops" },
+          { name: "Conditionals", value: "conditionals" },
+          { name: "Arrays", value: "arrays" },
+          { name: "Objects", value: "objects" },
+          { name: "Classes", value: "classes" },
+        ],
+      },
+    ],
+    execute: snippet,
+  },
+  {
+    commandName1: "wiki",
+    description: "Searches Wikipedia and gives first paragraph",
+    options: [
+      {
+        type: "string",
+        name: "query",
+        description: "What do you want to search?",
+        required: true,
+      },
+    ],
+    execute: wikiSearch,
+  },
+  {
+    commandName1: "debug",
+    description: "Submit your code to debug it in various languages",
+    options: [
+      {
+        type: "string",
+        name: "language",
+        description: "The coding language",
+        required: true,
+        choices: [
+          { name: "Python", value: "python" },
+          { name: "JavaScript", value: "javascript" },
+          { name: "TypeScript", value: "typescript" },
+          { name: "C", value: "c" },
+          { name: "C++", value: "cpp" },
+          { name: "C#", value: "csharp" },
+        ],
+      },
+      {
+        type: "string",
+        description: "The code to debug",
+        name: "code",
+        required: true,
+      },
+    ],
+    execute: debug,
+  },
+  {
+    commandName1: "gitfind",
+    description: "Find details about a repository",
+    options: [
+      {
+        type: "string",
+        name: "author",
+        description: "Author of the repository",
+        required: true,
+      },
+      {
+        type: "string",
+        description: "The name of the repo to find",
+        name: "repository_name",
+        required: true,
+      },
+    ],
+    execute: gitfind,
+  },
+  {
+    commandName1: "challenge",
+    description: "Create a timed coding challenge (Admin only)",
+    options: [
+      {
+        type: "string",
+        name: "prompt",
+        description: "The prompt for the challenge",
+        required: true
+      },
+      {
+        type: "integer",
+        name: "duration",
+        description: "Duration of the challenge in minutes",
+        required: true
+      }
+    ],
+    execute: challenge,
   },
 ];
 
@@ -787,6 +933,446 @@ async function docService(interaction) {
   // Send the embed reply
   await interaction.reply({ embeds: [docEmbed] });
 }
+
+async function suggest(interaction) {
+  const user1 = interaction.options.getUser("user");
+  const advice = interaction.options.getString("advice");
+
+  const sembed = new EmbedBuilder()
+    .setColor(0x3498db)
+    .setTitle("💡 Suggestion")
+    .setDescription(`**User:** ${user1.tag}\n**Advice:** ${advice}`)
+    .setFooter({ text: `Requested by ${interaction.user.tag}` })
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [sembed] });
+}
+
+async function getWikipediaSummary(query) {
+  const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
+    query
+  )}`;
+
+  const res = await fetch(url);
+
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Wikipedia API error");
+
+  const data = await res.json();
+
+  return {
+    title: data.title,
+    extract: data.extract,
+    url: data.content_urls?.desktop?.page,
+    thumbnail: data.thumbnail?.source,
+  };
+}
+
+async function wikiSearch(interaction) {
+  const query = interaction.options.getString("query");
+
+  await interaction.deferReply();
+
+  const result = await getWikipediaSummary(query);
+
+  if (!result) {
+    return interaction.editReply(`No Wikipedia page found for **${query}**.`);
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(result.title)
+    .setDescription(result.extract)
+    .setURL(result.url)
+    .setColor(0x1a1a1a);
+
+  if (result.thumbnail) {
+    embed.setThumbnail(result.thumbnail);
+  }
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+async function debug(interaction) {
+  const language = interaction.options.getString("language");
+  const codeSnippet = interaction.options.getString("code");
+
+  // Log the received code snippet for debugging purposes
+  console.log("Received code for debugging in", language, ":", codeSnippet);
+
+  // Execute the code based on the language
+  let result;
+  try {
+    result = await runCode(language, codeSnippet);
+  } catch (error) {
+    result = `Error occurred: ${error.message}`;
+  }
+
+  await interaction.reply(result);
+}
+
+async function runCode(language, codeSnippet) {
+  switch (language) {
+    case "python":
+      return runPython(codeSnippet);
+    case "javascript":
+      return runJavaScript(codeSnippet);
+    case "typescript":
+      return runTypeScript(codeSnippet);
+    case "c":
+      return runC(codeSnippet);
+    case "cpp":
+      return runCpp(codeSnippet);
+    case "csharp":
+      return runCSharp(codeSnippet);
+    default:
+      throw new Error("Unsupported language");
+  }
+}
+
+async function runPython(codeSnippet) {
+  const tempFilePath = path.join(__dirname, "temp_code.py");
+  fs.writeFileSync(tempFilePath, codeSnippet);
+
+  return new Promise((resolve, reject) => {
+    PythonShell.run(tempFilePath, null, (err, results) => {
+      if (err) {
+        reject(`Error: ${err.message}`);
+      } else {
+        resolve(`Output: ${results.join("\n")}`);
+      }
+    });
+  });
+}
+
+async function runJavaScript(codeSnippet) {
+  const tempFilePath = path.join(__dirname, "temp_code.js");
+  fs.writeFileSync(tempFilePath, codeSnippet);
+
+  return new Promise((resolve, reject) => {
+    exec(`node ${tempFilePath}`, (err, stdout, stderr) => {
+      if (err) {
+        reject(`Error: ${stderr}`);
+      } else {
+        resolve(`Output: ${stdout}`);
+      }
+    });
+  });
+}
+
+async function runTypeScript(codeSnippet) {
+  const tempFilePath = path.join(__dirname, "temp_code.ts");
+  fs.writeFileSync(tempFilePath, codeSnippet);
+
+  return new Promise((resolve, reject) => {
+    exec(`ts-node ${tempFilePath}`, (err, stdout, stderr) => {
+      if (err) {
+        reject(`Error: ${stderr}`);
+      } else {
+        resolve(`Output: ${stdout}`);
+      }
+    });
+  });
+}
+
+async function runC(codeSnippet) {
+  const tempFilePath = path.join(__dirname, "temp_code.c");
+  const tempExecutablePath = path.join(__dirname, "temp_code.out");
+  fs.writeFileSync(tempFilePath, codeSnippet);
+
+  return new Promise((resolve, reject) => {
+    exec(
+      `gcc ${tempFilePath} -o ${tempExecutablePath}`,
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(`Error: ${stderr}`);
+        } else {
+          exec(`${tempExecutablePath}`, (execErr, execStdout, execStderr) => {
+            if (execErr) {
+              reject(`Error: ${execStderr}`);
+            } else {
+              resolve(`Output: ${execStdout}`);
+            }
+          });
+        }
+      }
+    );
+  });
+}
+
+async function runCpp(codeSnippet) {
+  const tempFilePath = path.join(__dirname, "temp_code.cpp");
+  const tempExecutablePath = path.join(__dirname, "temp_code.out");
+  fs.writeFileSync(tempFilePath, codeSnippet);
+
+  return new Promise((resolve, reject) => {
+    exec(
+      `g++ ${tempFilePath} -o ${tempExecutablePath}`,
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(`Error: ${stderr}`);
+        } else {
+          exec(`${tempExecutablePath}`, (execErr, execStdout, execStderr) => {
+            if (execErr) {
+              reject(`Error: ${execStderr}`);
+            } else {
+              resolve(`Output: ${execStdout}`);
+            }
+          });
+        }
+      }
+    );
+  });
+}
+
+async function runCSharp(codeSnippet) {
+  const tempFilePath = path.join(__dirname, "temp_code.cs");
+  const tempExecutablePath = path.join(__dirname, "temp_code.exe");
+  fs.writeFileSync(tempFilePath, codeSnippet);
+
+  return new Promise((resolve, reject) => {
+    exec(
+      `csc ${tempFilePath} -out:${tempExecutablePath}`,
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(`Error: ${stderr}`);
+        } else {
+          exec(`${tempExecutablePath}`, (execErr, execStdout, execStderr) => {
+            if (execErr) {
+              reject(`Error: ${execStderr}`);
+            } else {
+              resolve(`Output: ${execStdout}`);
+            }
+          });
+        }
+      }
+    );
+  });
+}
+
+async function gitfind(interaction) {
+  const author = interaction.options.getString("author");
+  const repo = interaction.options.getString("repository_name");
+
+  const url = `https://api.github.com/repos/${author}/${repo}`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return await interaction.reply({
+        content: `❌ Could not find repository \`${author}/${repo}\`.`,
+        ephemeral: true,
+      });
+    }
+
+    const data = await response.json();
+
+    const embed = {
+      color: 0x24292e,
+      title: data.full_name,
+      url: data.html_url,
+      description: data.description || "No description provided.",
+      fields: [
+        {
+          name: "⭐ Stars",
+          value: `${data.stargazers_count}`,
+          inline: true,
+        },
+        {
+          name: "🍴 Forks",
+          value: `${data.forks_count}`,
+          inline: true,
+        },
+        {
+          name: "🐛 Issues",
+          value: `${data.open_issues_count}`,
+          inline: true,
+        },
+      ],
+      footer: {
+        text: `Last updated`,
+      },
+      timestamp: new Date(data.updated_at),
+    };
+
+    await interaction.reply({ embeds: [embed] });
+  } catch (error) {
+    console.error("GitHub fetch error:", error);
+    await interaction.reply({
+      content: `⚠️ An error occurred while fetching repo info.`,
+      ephemeral: true,
+    });
+  }
+}
+
+async function challenge(interaction) {
+  if (!interaction.inGuild()) {
+    return await interaction.reply({ content: "This command can't be used in DMs.", ephemeral: true });
+  }
+
+  if (!interaction.member.permissions.has("Administrator")) {
+    return await interaction.reply({ content: "Only server admins can use this command.", ephemeral: true });
+  }
+
+  const prompt = interaction.options.getString("prompt");
+  const duration = interaction.options.getInteger("duration");
+
+  const thread = await interaction.channel.threads.create({
+    name: `Challenge - ${interaction.user.username}`,
+    autoArchiveDuration: 60,
+    reason: "Timed coding challenge created"
+  });
+
+  const endTime = Date.now() + duration * 60 * 1000;
+  const challengeId = Date.now().toString();
+  const submissions = [];
+
+  thread.send(`🔔 **Coding Challenge Started!**\n**Prompt:** ${prompt}\n**Duration:** ${duration} minute(s)\nSubmit your code below!`);
+
+  interaction.reply({ content: `Challenge started in thread <#${thread.id}>`, ephemeral: true });
+
+  const collector = thread.createMessageCollector({ time: duration * 60 * 1000 });
+
+  collector.on("collect", msg => {
+    if (msg.author.bot) return;
+    const attachment = msg.attachments.first();
+    const submission = {
+      username: msg.author.username,
+      userId: msg.author.id,
+      content: attachment ? `[Attachment](${attachment.url})` : msg.content,
+    };
+    submissions.push(submission);
+  });
+
+  collector.on("end", async () => {
+    thread.send("⏱️ The challenge is now closed. Results will be posted in some days.");
+    thread.setLocked(true);
+
+    const user = interaction.user;
+    if (submissions.length === 0) {
+      user.send("No submissions were received for your challenge.");
+      return;
+    }
+
+    for (const sub of submissions) {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`grade_${sub.userId}_${challengeId}`)
+          .setLabel("Grade")
+          .setStyle(ButtonStyle.Primary)
+      );
+
+      await user.send({
+        content: `**Submission from ${sub.username}**:\n${sub.content}`,
+        components: [row]
+      });
+    }
+
+    const grades = {};
+    const graded = new Set();
+
+    const dmCollector = user.dmChannel.createMessageComponentCollector({
+      filter: i => i.customId.startsWith("grade_"),
+      time: 1000 * 60 * 60
+    });
+
+    dmCollector.on("collect", async interaction => {
+      const [, userId, id] = interaction.customId.split("_");
+      if (graded.has(userId)) {
+        await interaction.reply({ content: "You've already graded this submission.", ephemeral: true });
+        return;
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId(`modal_${userId}_${id}`)
+        .setTitle("Grade Submission")
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("score")
+              .setLabel("Score out of 100")
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+
+      await interaction.showModal(modal);
+    });
+
+    user.client.on("interactionCreate", async interaction => {
+      if (!interaction.isModalSubmit()) return;
+
+      const [_, userId, id] = interaction.customId.split("_");
+      const score = interaction.fields.getTextInputValue("score");
+
+      if (isNaN(score) || score < 0 || score > 100) {
+        if (interaction.deferred || interaction.replied) {
+          try {
+            await interaction.followUp({ content: "You've already graded this submission.", ephemeral: true });
+          } catch (e) {
+            console.warn("Failed to follow up:", e);
+          }
+        } else {
+          try {
+            await interaction.reply({ content: "You've already graded this submission.", ephemeral: true });
+          } catch (e) {
+            console.warn("Failed to reply:", e);
+          }
+        }
+        
+      }
+
+      grades[userId] = score;
+      graded.add(userId);
+      await interaction.reply({ content: `Graded submission with a score of ${score}.`, ephemeral: true });
+
+      if (graded.size === submissions.length) {
+        let csv = "Username,Score\n";
+        for (const sub of submissions) {
+          const score = grades[sub.userId] ?? "N/A";
+          csv += `"${sub.username}","${score}"\n`;
+        }
+
+        const buffer = Buffer.from(csv, "utf-8");
+        const attachment = new AttachmentBuilder(buffer, { name: "challenge_results.csv" });
+
+        await thread.send({ content: "📊 All submissions have been graded. Here are the results:", files: [attachment] });
+      }
+    });
+  });
+}
+
+// client.on('interactionCreate', async interaction => {
+//   if (!interaction.isModalSubmit()) return;
+//   if (!interaction.customId.startsWith('rate_')) return;
+
+//   const [_, threadId, userId] = interaction.customId.split('_');
+//   const score = interaction.fields.getTextInputValue('score');
+//   const challenge = activeChallenges.get(threadId);
+//   if (!challenge) return;
+
+//   challenge.grading.set(userId, score);
+
+//   // If all submissions are graded
+//   if (challenge.grading.size === challenge.submissions.size) {
+//     let csv = "Username,UserID,Score,Code\n";
+//     for (const [id, code] of challenge.submissions.entries()) {
+//       const score = challenge.grading.get(id);
+//       const username = (await interaction.client.users.fetch(id)).tag;
+//       csv += `"${username}",${id},${score},"${code.replace(/"/g, '""')}"\n`;
+//     }
+
+//     const filePath = `/tmp/results_${threadId}.csv`;
+//     fs.writeFileSync(filePath, csv);
+//     const attachment = new AttachmentBuilder(filePath);
+//     const thread = await interaction.client.channels.fetch(threadId);
+//     await thread.send({ content: "📊 Challenge results are in!", files: [attachment] });
+
+//     activeChallenges.delete(threadId);
+//   }
+
+//   await interaction.reply({ content: `Saved score of ${score} for <@${userId}>.`, ephemeral: true });
+// });
+
 
 client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
