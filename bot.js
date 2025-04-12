@@ -1235,14 +1235,14 @@ async function challenge(interaction) {
   collector.on("collect", async msg => {
     if (msg.author.bot) return;
 
-    const hasAttachment = message.attachments.size > 0;
+    const hasAttachment = msg.attachments.size > 0;
     if (!hasAttachment) {
       try {
-        await message.delete();
-        await message.author.send("⚠️ Please submit your code as a file attachment only.");
-        console.log(`Deleted message from ${message.author.tag} (no attachment).`);
+        await msg.delete();
+        await msg.author.send("⚠️ Please submit your code as a file attachment only.");
+        console.log(`Deleted message from ${msg.author.tag} (no attachment).`);
       } catch (err) {
-        console.error(`Could not delete message from ${message.author.tag}:`, err);
+        console.error(`Could not delete message from ${msg.author.tag}:`, err);
       }
       return;
     }
