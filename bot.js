@@ -1230,7 +1230,7 @@ async function challenge(interaction) {
 
   // Create Thread
   const thread = await interaction.channel.threads.create({
-    name: `Challenge - ${interaction.user.username}`,
+    name: `Challenge - ${prompt}`,
     autoArchiveDuration: 60,
     reason: "Timed coding challenge created",
   });
