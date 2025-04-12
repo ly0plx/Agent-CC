@@ -1257,55 +1257,63 @@ async function challenge(interaction) {
 
   const submittedUsers = new Set();
 
-  collector.on("collect", async (msg) => {
+  collector.on("collect", async msg => {
     if (msg.author.bot) return;
-
-    // Check for attachment
+  
     const hasAttachment = msg.attachments.size > 0;
+  
     if (!hasAttachment) {
       try {
         await msg.delete();
-        await msg.author.send(
-          "⚠️ Please submit your code as a file attachment only."
-        );
+        await msg.author.send("⚠️ Please submit your code as a file attachment only.");
         console.log(`Deleted message from ${msg.author.tag} (no attachment).`);
       } catch (err) {
         console.error(`Could not delete message from ${msg.author.tag}:`, err);
       }
       return;
     }
-
-    // Check for duplicates
+  
     if (submittedUsers.has(msg.author.id)) {
       try {
         await msg.delete();
-        await msg.author.send(
-          "⚠️ You have already submitted your code. Please wait for grading."
-        );
+        await msg.author.send("⚠️ You have already submitted your code. Please wait for grading.");
         console.log(`Deleted duplicate message from ${msg.author.tag}.`);
       } catch (err) {
-        console.error(
-          `Could not delete duplicate message from ${msg.author.tag}:`,
-          err
-        );
+        console.error(`Could not delete duplicate message from ${msg.author.tag}:`, err);
       }
       return;
     }
-
-    // Accept submission
+  
     const attachment = msg.attachments.first();
-    const submission = {
-      username: msg.author.username,
-      userId: msg.author.id,
-      content: `[Attachment](${attachment.url})`,
-    };
-
-    submissions.push(submission);
-    submittedUsers.add(msg.author.id);
-
-    console.log(`✅ Accepted submission from ${msg.author.tag}`);
+    let fileContent = "";
+  
+    try {
+      const response = await fetch(attachment.url);
+      fileContent = await response.text();
+  
+      // Optional: Limit length to avoid crashing DM if file is huge
+      if (fileContent.length > 1900) {
+        fileContent = fileContent.slice(0, 1900) + "\n... (truncated)";
+      }
+  
+      const submission = {
+        username: msg.author.username,
+        userId: msg.author.id,
+        content: msg,
+        attachment: attachment,
+      };
+  
+      submissions.push(submission);
+      submittedUsers.add(msg.author.id);
+  
+      console.log(`✅ Accepted and read submission from ${msg.author.tag}`);
+    } catch (err) {
+      console.error(`❌ Failed to fetch or read attachment from ${msg.author.tag}:`, err);
+      msg.author.send("⚠️ Something went wrong reading your submission. Please try again.");
+    }
   });
 
+  // When the challenge ends
   collector.on("end", async () => {
     thread.send(
       "⏱️ The challenge is now closed. Results will be posted in some days."
@@ -1326,9 +1334,17 @@ async function challenge(interaction) {
           .setStyle(ButtonStyle.Primary)
       );
 
+      const response = await fetch(sub.attachment.url);
+      const buffer = await response.arrayBuffer();
+
+      const file = new AttachmentBuilder(Buffer.from(buffer), {
+        name: sub.attachment.name,
+      });
+
       await user.send({
         content: `**Submission from ${sub.username}**:\n${sub.content}`,
         components: [row],
+        files: [file],
       });
     }
 
