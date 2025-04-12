@@ -1232,8 +1232,21 @@ async function challenge(interaction) {
 
   const collector = thread.createMessageCollector({ time: duration * 60 * 1000 });
 
-  collector.on("collect", msg => {
+  collector.on("collect", async msg => {
     if (msg.author.bot) return;
+
+    const hasAttachment = message.attachments.size > 0;
+    if (!hasAttachment) {
+      try {
+        await message.delete();
+        await message.author.send("⚠️ Please submit your code as a file attachment only.");
+        console.log(`Deleted message from ${message.author.tag} (no attachment).`);
+      } catch (err) {
+        console.error(`Could not delete message from ${message.author.tag}:`, err);
+      }
+      return;
+    }
+
     const attachment = msg.attachments.first();
     const submission = {
       username: msg.author.username,
@@ -1296,6 +1309,10 @@ async function challenge(interaction) {
         );
 
       await interaction.showModal(modal);
+
+      await thread.permissionOverwrites.create(interaction.user.id, {
+        SendMessages: false,
+      });
     });
 
     user.client.on("interactionCreate", async interaction => {

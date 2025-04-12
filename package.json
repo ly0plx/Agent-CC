@@ -21,7 +21,7 @@
   "homepage": "https://github.com/Tan01010/Agent-CC#readme",
   "dependencies": {
     "discord.js": "^14.18.0",
-    "dotenv": "^16.4.7",
+    "dotenv": "^16.5.0",
     "google-spreadsheet": "^4.1.4",
     "node-fetch": "^3.3.2",
     "os": "^0.1.2",
