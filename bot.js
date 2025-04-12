@@ -14,14 +14,14 @@ import {
   ActionRowBuilder,
   AttachmentBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
 } from "discord.js";
 import fetch from "node-fetch";
 import { PythonShell } from "python-shell";
 import { exec } from "child_process";
 import fs from "fs";
 import path from "path";
-import mentionRelay from './mentionRelay.js'; // adjust path if needed
+import mentionRelay from "./mentionRelay.js"; // adjust path if needed
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -29,27 +29,30 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,  // Ensure this is enabled
-    GatewayIntentBits.DirectMessages,  // Added for listening to DMs
-    GatewayIntentBits.MessageContent,  // Make sure MessageContent intent is on
+    GatewayIntentBits.MessageContent, // Ensure this is enabled
+    GatewayIntentBits.DirectMessages, // Added for listening to DMs
+    GatewayIntentBits.MessageContent, // Make sure MessageContent intent is on
   ],
   partials: [
-    'CHANNEL',  // Allows access to partials for channels, needed for DMs
-    'MESSAGE',  // Added for message partials, ensures the bot can respond to DMs and missing messages
+    "CHANNEL", // Allows access to partials for channels, needed for DMs
+    "MESSAGE", // Added for message partials, ensures the bot can respond to DMs and missing messages
   ],
 });
 
-
 // Log when the bot is ready
-client.once('ready', () => {
-  console.log('Bot is ready!');
+client.once("ready", () => {
+  console.log("Bot is ready!");
 });
 
 // Add logging to see if the message event is triggered
 client.on(Events.MessageCreate, (message) => {
   console.log(`Message received: ${message.content}`);
   if (message.author.bot) return; // Avoid bot triggering itself
-  console.log(`Message from ${message.author.tag} in ${message.guild ? message.guild.name : 'DM'}`);
+  console.log(
+    `Message from ${message.author.tag} in ${
+      message.guild ? message.guild.name : "DM"
+    }`
+  );
 });
 
 // Listen for mentions and forward the message to the specified user
@@ -473,14 +476,14 @@ const allCommands = [
         type: "string",
         name: "prompt",
         description: "The prompt for the challenge",
-        required: true
+        required: true,
       },
       {
         type: "integer",
         name: "duration",
         description: "Duration of the challenge in minutes",
-        required: true
-      }
+        required: true,
+      },
     ],
     execute: challenge,
   },
@@ -1205,41 +1208,66 @@ async function gitfind(interaction) {
 }
 
 async function challenge(interaction) {
+  // Make sure it is in a server
   if (!interaction.inGuild()) {
-    return await interaction.reply({ content: "This command can't be used in DMs.", ephemeral: true });
+    return await interaction.reply({
+      content: "This command can't be used in DMs.",
+      ephemeral: true,
+    });
   }
 
+  // Make sure that user is an admin
   if (!interaction.member.permissions.has("Administrator")) {
-    return await interaction.reply({ content: "Only server admins can use this command.", ephemeral: true });
+    return await interaction.reply({
+      content: "Only server admins can use this command.",
+      ephemeral: true,
+    });
   }
 
+  // Get details from the interaction
   const prompt = interaction.options.getString("prompt");
   const duration = interaction.options.getInteger("duration");
 
+  // Create Thread
   const thread = await interaction.channel.threads.create({
     name: `Challenge - ${interaction.user.username}`,
     autoArchiveDuration: 60,
-    reason: "Timed coding challenge created"
+    reason: "Timed coding challenge created",
   });
 
+  // Make collector pt.1
   const endTime = Date.now() + duration * 60 * 1000;
   const challengeId = Date.now().toString();
   const submissions = [];
 
-  thread.send(`🔔 **Coding Challenge Started!**\n**Prompt:** ${prompt}\n**Duration:** ${duration} minute(s)\nSubmit your code below!`);
+  // Starting Messages
+  thread.send(
+    `🔔 **Coding Challenge Started!**\n**Prompt:** ${prompt}\n**Duration:** ${duration} minute(s)\nSubmit your code below!`
+  );
 
-  interaction.reply({ content: `Challenge started in thread <#${thread.id}>`, ephemeral: true });
+  interaction.reply({
+    content: `Challenge started in thread <#${thread.id}>`,
+    ephemeral: true,
+  });
 
-  const collector = thread.createMessageCollector({ time: duration * 60 * 1000 });
+  // Make collector pt.2
+  const collector = thread.createMessageCollector({ 
+    time: duration * 60 * 1000,
+  });
 
-  collector.on("collect", async msg => {
+  const submittedUsers = new Set();
+
+  collector.on("collect", async (msg) => {
     if (msg.author.bot) return;
 
+    // Check for attachment
     const hasAttachment = msg.attachments.size > 0;
     if (!hasAttachment) {
       try {
         await msg.delete();
-        await msg.author.send("⚠️ Please submit your code as a file attachment only.");
+        await msg.author.send(
+          "⚠️ Please submit your code as a file attachment only."
+        );
         console.log(`Deleted message from ${msg.author.tag} (no attachment).`);
       } catch (err) {
         console.error(`Could not delete message from ${msg.author.tag}:`, err);
@@ -1247,17 +1275,41 @@ async function challenge(interaction) {
       return;
     }
 
+    // Check for duplicates
+    if (submittedUsers.has(msg.author.id)) {
+      try {
+        await msg.delete();
+        await msg.author.send(
+          "⚠️ You have already submitted your code. Please wait for grading."
+        );
+        console.log(`Deleted duplicate message from ${msg.author.tag}.`);
+      } catch (err) {
+        console.error(
+          `Could not delete duplicate message from ${msg.author.tag}:`,
+          err
+        );
+      }
+      return;
+    }
+
+    // Accept submission
     const attachment = msg.attachments.first();
     const submission = {
       username: msg.author.username,
       userId: msg.author.id,
-      content: attachment ? `[Attachment](${attachment.url})` : msg.content,
+      content: `[Attachment](${attachment.url})`,
     };
+
     submissions.push(submission);
+    submittedUsers.add(msg.author.id);
+
+    console.log(`✅ Accepted submission from ${msg.author.tag}`);
   });
 
   collector.on("end", async () => {
-    thread.send("⏱️ The challenge is now closed. Results will be posted in some days.");
+    thread.send(
+      "⏱️ The challenge is now closed. Results will be posted in some days."
+    );
     thread.setLocked(true);
 
     const user = interaction.user;
@@ -1276,7 +1328,7 @@ async function challenge(interaction) {
 
       await user.send({
         content: `**Submission from ${sub.username}**:\n${sub.content}`,
-        components: [row]
+        components: [row],
       });
     }
 
@@ -1284,14 +1336,17 @@ async function challenge(interaction) {
     const graded = new Set();
 
     const dmCollector = user.dmChannel.createMessageComponentCollector({
-      filter: i => i.customId.startsWith("grade_"),
-      time: 1000 * 60 * 60
+      filter: (i) => i.customId.startsWith("grade_"),
+      time: 1000 * 60 * 60,
     });
 
-    dmCollector.on("collect", async interaction => {
+    dmCollector.on("collect", async (interaction) => {
       const [, userId, id] = interaction.customId.split("_");
       if (graded.has(userId)) {
-        await interaction.reply({ content: "You've already graded this submission.", ephemeral: true });
+        await interaction.reply({
+          content: "You've already graded this submission.",
+          ephemeral: true,
+        });
         return;
       }
 
@@ -1309,13 +1364,9 @@ async function challenge(interaction) {
         );
 
       await interaction.showModal(modal);
-
-      await thread.permissionOverwrites.create(interaction.user.id, {
-        SendMessages: false,
-      });
     });
 
-    user.client.on("interactionCreate", async interaction => {
+    user.client.on("interactionCreate", async (interaction) => {
       if (!interaction.isModalSubmit()) return;
 
       const [_, userId, id] = interaction.customId.split("_");
@@ -1324,23 +1375,31 @@ async function challenge(interaction) {
       if (isNaN(score) || score < 0 || score > 100) {
         if (interaction.deferred || interaction.replied) {
           try {
-            await interaction.followUp({ content: "You've already graded this submission.", ephemeral: true });
+            await interaction.followUp({
+              content: "You've already graded this submission.",
+              ephemeral: true,
+            });
           } catch (e) {
             console.warn("Failed to follow up:", e);
           }
         } else {
           try {
-            await interaction.reply({ content: "You've already graded this submission.", ephemeral: true });
+            await interaction.reply({
+              content: "You've already graded this submission.",
+              ephemeral: true,
+            });
           } catch (e) {
             console.warn("Failed to reply:", e);
           }
         }
-        
       }
 
       grades[userId] = score;
       graded.add(userId);
-      await interaction.reply({ content: `Graded submission with a score of ${score}.`, ephemeral: true });
+      await interaction.reply({
+        content: `Graded submission with a score of ${score}.`,
+        ephemeral: true,
+      });
 
       if (graded.size === submissions.length) {
         let csv = "Username,Score\n";
@@ -1350,9 +1409,14 @@ async function challenge(interaction) {
         }
 
         const buffer = Buffer.from(csv, "utf-8");
-        const attachment = new AttachmentBuilder(buffer, { name: "challenge_results.csv" });
+        const attachment = new AttachmentBuilder(buffer, {
+          name: "challenge_results.csv",
+        });
 
-        await thread.send({ content: "📊 All submissions have been graded. Here are the results:", files: [attachment] });
+        await thread.send({
+          content: "📊 All submissions have been graded. Here are the results:",
+          files: [attachment],
+        });
       }
     });
   });
@@ -1389,7 +1453,6 @@ async function challenge(interaction) {
 
 //   await interaction.reply({ content: `Saved score of ${score} for <@${userId}>.`, ephemeral: true });
 // });
-
 
 client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
