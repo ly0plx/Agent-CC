@@ -23,6 +23,7 @@ import fs from "fs";
 import path from "path";
 import mentionRelay from "./mentionRelay.js"; // adjust path if needed
 import dotenv from "dotenv";
+import { time } from "console";
 dotenv.config();
 
 const client = new Client({
@@ -1241,8 +1242,18 @@ async function challenge(interaction) {
   const submissions = [];
 
   // Starting Messages
+  const embed = new EmbedBuilder()
+  .setColor(0xADEC76)
+  .setTitle("🔔 Challenge Started!")
+  .setDescription("Please submit your code below. One submission per user.")
+  .addFields(
+    { name: "Prompt", value: `${prompt}`, inline: true },
+    { name: "Duration", value: `${duration}`, inline: true }
+  )
+  .setFooter({ text: `Started by: ${interaction.user.username}` })
+  .setTimestamp(interaction.createdTimestamp);
   thread.send(
-    `🔔 **Coding Challenge Started!**\n**Prompt:** ${prompt}\n**Duration:** ${duration} minute(s)\nSubmit your code below!`
+    { embeds: [embed] }
   );
 
   interaction.reply({
