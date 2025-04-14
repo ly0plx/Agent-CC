@@ -488,6 +488,25 @@ const allCommands = [
     ],
     execute: challenge,
   },
+  {
+    commandName1: "schedule",
+    description: "Schedule a command to run later",
+    options: [
+      {
+        type: "string",
+        name: "command",
+        description: "The command to schedule (e.g., ping)",
+        required: true,
+      },
+      {
+        type: "integer",
+        name: "delay",
+        description: "Delay in minutes before executing the command",
+        required: true,
+      },
+    ],
+    excecute: schedule,
+  }
 ];
 
 async function ping(interaction) {
@@ -1447,6 +1466,29 @@ async function challenge(interaction) {
       }
     });
   });
+}
+
+async function schedule(interaction) {
+  const commandName = interaction.options.getString("command");
+    const delay = interaction.options.getInteger("delay");
+
+    const command = allCommands.find(cmd => cmd.commandName1 === commandName);
+
+    if (!command) {
+      await interaction.reply({ content: `Command \`${commandName}\` not found.`, ephemeral: true });
+      return;
+    }
+
+    await interaction.reply(`✅ Scheduled \`${commandName}\` to run in ${delay} minute(s).`);
+
+    setTimeout(() => {
+      // Simulate command execution
+      try {
+        command.execute(interaction);
+      } catch (err) {
+        console.error(`Error running scheduled command '${commandName}':`, err);
+      }
+    }, delay * 60 * 1000);
 }
 
 // client.on('interactionCreate', async interaction => {
