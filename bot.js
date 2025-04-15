@@ -505,7 +505,7 @@ const allCommands = [
         required: true,
       },
     ],
-    excecute: schedule,
+    execute: schedule,
   }
 ];
 
