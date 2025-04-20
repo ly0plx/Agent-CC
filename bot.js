@@ -490,23 +490,53 @@ const allCommands = [
   },
   {
     commandName1: "schedule",
-    description: "Schedule a command to run later",
+    description: "Schedule a command to run later (Admin & Server only)",
     options: [
       {
-        type: "string",
+        type: "string", // STRING
         name: "command",
-        description: "The command to schedule (e.g., ping)",
+        description: "Command to run",
+        required: true,
+      },
+      {
+        type: "integer", // INTEGER
+        name: "year",
+        description: "Year to run at",
         required: true,
       },
       {
         type: "integer",
-        name: "delay",
-        description: "Delay in minutes before executing the command",
+        name: "month",
+        description: "Month (1-12)",
         required: true,
+      },
+      {
+        type: "integer",
+        name: "day",
+        description: "Day of month",
+        required: true,
+      },
+      {
+        type: "integer",
+        name: "hour",
+        description: "Hour (0-23)",
+        required: true,
+      },
+      {
+        type: "integer",
+        name: "minute",
+        description: "Minute (0-59)",
+        required: true,
+      },
+      {
+        type: "string", // STRING
+        name: "args",
+        description: "Arguments as JSON array",
+        required: false,
       },
     ],
     execute: schedule,
-  }
+  },
 ];
 
 async function ping(interaction) {
@@ -1262,18 +1292,16 @@ async function challenge(interaction) {
 
   // Starting Messages
   const embed = new EmbedBuilder()
-  .setColor(0xADEC76)
-  .setTitle("🔔 Challenge Started!")
-  .setDescription("Please submit your code below. One submission per user.")
-  .addFields(
-    { name: "Prompt", value: `${prompt}`, inline: true },
-    { name: "Duration", value: `${duration}`, inline: true }
-  )
-  .setFooter({ text: `Started by: ${interaction.user.username}` })
-  .setTimestamp(interaction.createdTimestamp);
-  thread.send(
-    { embeds: [embed] }
-  );
+    .setColor(0xadec76)
+    .setTitle("🔔 Challenge Started!")
+    .setDescription("Please submit your code below. One submission per user.")
+    .addFields(
+      { name: "Prompt", value: `${prompt}`, inline: true },
+      { name: "Duration", value: `${duration}`, inline: true }
+    )
+    .setFooter({ text: `Started by: ${interaction.user.username}` })
+    .setTimestamp(interaction.createdTimestamp);
+  thread.send({ embeds: [embed] });
 
   interaction.reply({
     content: `Challenge started in thread <#${thread.id}>`,
@@ -1281,65 +1309,77 @@ async function challenge(interaction) {
   });
 
   // Make collector pt.2
-  const collector = thread.createMessageCollector({ 
+  const collector = thread.createMessageCollector({
     time: duration * 60 * 1000,
   });
 
   const submittedUsers = new Set();
 
-  collector.on("collect", async msg => {
+  collector.on("collect", async (msg) => {
     if (msg.author.bot) return;
-  
+
     const hasAttachment = msg.attachments.size > 0;
-  
+
     if (!hasAttachment) {
       try {
         await msg.delete();
-        await msg.author.send("⚠️ Please submit your code as a file attachment only.");
+        await msg.author.send(
+          "⚠️ Please submit your code as a file attachment only."
+        );
         console.log(`Deleted message from ${msg.author.tag} (no attachment).`);
       } catch (err) {
         console.error(`Could not delete message from ${msg.author.tag}:`, err);
       }
       return;
     }
-  
+
     if (submittedUsers.has(msg.author.id)) {
       try {
         await msg.delete();
-        await msg.author.send("⚠️ You have already submitted your code. Please wait for grading.");
+        await msg.author.send(
+          "⚠️ You have already submitted your code. Please wait for grading."
+        );
         console.log(`Deleted duplicate message from ${msg.author.tag}.`);
       } catch (err) {
-        console.error(`Could not delete duplicate message from ${msg.author.tag}:`, err);
+        console.error(
+          `Could not delete duplicate message from ${msg.author.tag}:`,
+          err
+        );
       }
       return;
     }
-  
+
     const attachment = msg.attachments.first();
     let fileContent = "";
-  
+
     try {
       const response = await fetch(attachment.url);
       fileContent = await response.text();
-  
+
       // Optional: Limit length to avoid crashing DM if file is huge
       if (fileContent.length > 1900) {
         fileContent = fileContent.slice(0, 1900) + "\n... (truncated)";
       }
-  
+
       const submission = {
         username: msg.author.username,
         userId: msg.author.id,
         content: msg,
         attachment: attachment,
       };
-  
+
       submissions.push(submission);
       submittedUsers.add(msg.author.id);
-  
+
       console.log(`✅ Accepted and read submission from ${msg.author.tag}`);
     } catch (err) {
-      console.error(`❌ Failed to fetch or read attachment from ${msg.author.tag}:`, err);
-      msg.author.send("⚠️ Something went wrong reading your submission. Please try again.");
+      console.error(
+        `❌ Failed to fetch or read attachment from ${msg.author.tag}:`,
+        err
+      );
+      msg.author.send(
+        "⚠️ Something went wrong reading your submission. Please try again."
+      );
     }
   });
 
@@ -1469,26 +1509,100 @@ async function challenge(interaction) {
 }
 
 async function schedule(interaction) {
+  // Make sure it is in a server
+  if (!interaction.inGuild()) {
+    return await interaction.reply({
+      content: "This command can't be used in DMs.",
+      ephemeral: true,
+    });
+  }
+
+  // Make sure that user is an admin
+  if (!interaction.member.permissions.has("Administrator")) {
+    return await interaction.reply({
+      content: "Only server admins can use this command.",
+      ephemeral: true,
+    });
+  }
+
   const commandName = interaction.options.getString("command");
-    const delay = interaction.options.getInteger("delay");
+  const argsJson = interaction.options.getString("args") || "[]";
 
-    const command = allCommands.find(cmd => cmd.commandName1 === commandName);
+  const year = interaction.options.getInteger("year");
+  const month = interaction.options.getInteger("month") - 1; // JS months are 0-indexed
+  const day = interaction.options.getInteger("day");
+  const hour = interaction.options.getInteger("hour");
+  const minute = interaction.options.getInteger("minute");
 
-    if (!command) {
-      await interaction.reply({ content: `Command \`${commandName}\` not found.`, ephemeral: true });
-      return;
+  let parsedArgs;
+  try {
+    parsedArgs = JSON.parse(argsJson);
+  } catch (e) {
+    return interaction.reply({
+      content: "❌ Failed to parse `args`. Make sure it's valid JSON.",
+      ephemeral: true,
+    });
+  }
+
+  const runDate = new Date(year, month, day, hour, minute);
+  const now = new Date();
+  const delayMs = runDate.getTime() - now.getTime();
+
+  if (delayMs <= 0) {
+    return interaction.reply({
+      content: "❌ That time is in the past. Please choose a future time.",
+      ephemeral: true,
+    });
+  }
+
+  await interaction.reply(
+    `✅ Scheduled \`${commandName}\` to run at ${runDate.toLocaleString()}.`
+  );
+
+  setTimeout(async () => {
+    const cmd = allCommands.find((c) => c.commandName1 === commandName);
+    if (!cmd) return;
+
+    const channel = await interaction.client.channels.fetch(
+      interaction.channel.id
+    );
+    const user = await interaction.client.users.fetch(interaction.user.id);
+
+    const fakeInteraction = {
+      user,
+      channel,
+      options: {
+        getString: (name) => {
+          const opt = parsedArgs.find((o) => o.name === name);
+          return opt?.value ?? null;
+        },
+        getInteger: (name) => {
+          const opt = parsedArgs.find((o) => o.name === name);
+          return opt?.value ?? null;
+        },
+        getUser: (name) => {
+          const opt = parsedArgs.find((o) => o.name === name);
+          return interaction.client.users.fetch(opt?.value);
+        },
+        data: parsedArgs,
+      },
+      deferReply: () => Promise.resolve(),
+      reply: (content) => channel.send(content),
+      editReply: (content) => channel.send(content),
+      followUp: (content) => channel.send(content),
+      replied: false,
+      deferred: false,
+    };
+
+    try {
+      await cmd.execute(fakeInteraction);
+    } catch (err) {
+      console.error(`Error executing scheduled command: ${err}`);
+      channel.send(
+        `❌ Failed to execute scheduled command \`${commandName}\`.`
+      );
     }
-
-    await interaction.reply(`✅ Scheduled \`${commandName}\` to run in ${delay} minute(s).`);
-
-    setTimeout(() => {
-      // Simulate command execution
-      try {
-        command.execute(interaction);
-      } catch (err) {
-        console.error(`Error running scheduled command '${commandName}':`, err);
-      }
-    }, delay * 60 * 1000);
+  }, delayMs);
 }
 
 // client.on('interactionCreate', async interaction => {
