@@ -15,6 +15,7 @@ import {
   AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ChannelType,
 } from "discord.js";
 import fetch from "node-fetch";
 import { PythonShell } from "python-shell";
@@ -25,6 +26,7 @@ import mentionRelay from "./mentionRelay.js"; // adjust path if needed
 import dotenv from "dotenv";
 import { time } from "console";
 dotenv.config();
+import controlServer from './controlServer.js';
 
 const client = new Client({
   intents: [
@@ -40,21 +42,39 @@ const client = new Client({
   ],
 });
 
-// Log when the bot is ready
-client.once("ready", () => {
-  console.log("Bot is ready!");
+
+
+const channels = {}; // This will hold our named channel accessors
+
+client.once("ready", async () => {
+  const guild = await client.guilds.fetch(process.env.CONTROL_GUILD_ID);
+  const allChannels = await guild.channels.fetch();
+
+  const desired = process.env.CONTROL_CHANNEL_NAMES
+    ? process.env.CONTROL_CHANNEL_NAMES.split(",").map((n) => n.trim().toLowerCase())
+    : [];
+
+  for (const ch of allChannels.values()) {
+    if (
+      ch &&
+      ch.type === ChannelType.GuildText &&
+      desired.includes(ch.name.toLowerCase())
+    ) {
+      channels[ch.name.toLowerCase()] = ch;
+    }
+  }
+
+  // Example of sending a message at startup
+  if (channels.commands) {
+    channels.botconsole.send("👋 Agent-CC is online and reporting for duty.");
+  } else {
+    console.warn("⚠️ 'commands' channel not found.");
+  }
 });
 
-// Add logging to see if the message event is triggered
-client.on(Events.MessageCreate, (message) => {
-  console.log(`Message received: ${message.content}`);
-  if (message.author.bot) return; // Avoid bot triggering itself
-  console.log(
-    `Message from ${message.author.tag} in ${
-      message.guild ? message.guild.name : "DM"
-    }`
-  );
-});
+
+
+controlServer.init(client);
 
 // Listen for mentions and forward the message to the specified user
 client.on(mentionRelay.name, mentionRelay.execute);
@@ -557,6 +577,7 @@ async function ping(interaction) {
   const seconds = totalSeconds % 60;
   const uptimeString = `${days}d ${hours}h ${minutes}m ${seconds}s`;
 
+
   const embed = {
     color: 0x00ffcc,
     title: "🏓 Pong!",
@@ -572,15 +593,15 @@ async function ping(interaction) {
       },
     ],
     footer: {
-      text: `Channel: #${interaction.channel.name}`,
+      text: `Channel: #${interaction.channel?.name ?? "DM"}`,
     },
     timestamp: new Date().toISOString(),
   };
 
   await interaction.editReply({ embeds: [embed] });
 
-  console.log(
-    `Ping used by ${interaction.user.tag} in #${interaction.channel.name} - Bot Latency: ${botLatency}ms`
+  channels.botconsole.send(
+    `Ping used by ${interaction.user.tag} in #${interaction.channel?.name} - Bot Latency: ${botLatency}ms`
   );
 }
 
@@ -659,7 +680,7 @@ async function troubleshoot(interaction) {
 
   await interaction.reply({ embeds: [embed] });
 
-  console.log(`Troubleshoot used by ${interaction.user.tag} - Error: ${error}`);
+  channels.botconsole.send(`Troubleshoot used by ${interaction.user.tag} - Error: ${error}`);
 }
 
 async function help(interaction) {
@@ -678,7 +699,7 @@ async function help(interaction) {
   };
 
   await interaction.reply({ embeds: [embed] });
-  console.log(`Help command used by ${interaction.user.tag}`);
+  channels.botconsole.send(`Help command used by ${interaction.user.tag}`);
 }
 
 async function info(interaction) {
@@ -750,7 +771,7 @@ async function info(interaction) {
   }
 
   await interaction.reply({ embeds: [embed] });
-  console.log(`Info command used by ${interaction.user.tag} for '${from}'`);
+  channels.botconsole.send(`Info command used by ${interaction.user.tag} for '${from}'`);
 }
 
 async function packageInfo(interaction) {
@@ -758,7 +779,7 @@ async function packageInfo(interaction) {
   let source = interaction.options.getString("source");
 
   // Log the request
-  console.log(
+  channels.botconsole.send(
     `📦 PackageInfo command used by ${interaction.user.tag} for '${name}' from '${source}'`
   );
 
@@ -790,13 +811,13 @@ async function packageInfo(interaction) {
     }
 
     if (!embed) {
-      console.log(`❌ Package '${name}' not found on '${source}'`);
+      channels.botconsole.send(`❌ Package '${name}' not found on '${source}'`);
       return interaction.editReply(
         `❌ Package \`${name}\` not found on ${source}.`
       );
     }
 
-    console.log(`✅ Package '${name}' info retrieved from '${source}'`);
+    channels.botconsole.send(`✅ Package '${name}' info retrieved from '${source}'`);
     await interaction.editReply({ embeds: [embed] });
   } catch (err) {
     console.error(`❗ Error fetching '${name}' from '${source}':`, err);
@@ -904,7 +925,7 @@ async function quote(interaction) {
     }); // Footer with a small icon
 
   await interaction.reply({ embeds: [quoteEmbed] });
-  console.log(
+  channels.botconsole.send(
     `Motivate command used by ${interaction.user.tag}. Sending quote: "${rquote}"`
   );
 }
@@ -922,7 +943,7 @@ async function snippet(interaction) {
     });
   }
 
-  console.log(
+  channels.botconsole.send(
     `Snippet command used by ${interaction.user.tag} for concept '${concept}'`
   );
 
@@ -930,8 +951,7 @@ async function snippet(interaction) {
     .setColor("#0099FF") // Set color
     .setTitle(`Example: ${concept.charAt(0).toUpperCase() + concept.slice(1)}`) // Title based on the concept
     .setDescription(
-      `Here is an example for **${
-        concept.charAt(0).toUpperCase() + concept.slice(1)
+      `Here is an example for **${concept.charAt(0).toUpperCase() + concept.slice(1)
       }**:`
     )
     .addFields({
@@ -962,7 +982,7 @@ async function docService(interaction) {
     });
   }
 
-  console.log(
+  channels.botconsole.send(
     `Doc service command used by ${interaction.user.tag} for service '${service}'`
   );
 
@@ -1050,7 +1070,7 @@ async function debug(interaction) {
   const codeSnippet = interaction.options.getString("code");
 
   // Log the received code snippet for debugging purposes
-  console.log("Received code for debugging in", language, ":", codeSnippet);
+  channels.botconsole.send("Received code for debugging in", language, ":", codeSnippet);
 
   // Execute the code based on the language
   let result;
@@ -1326,7 +1346,7 @@ async function challenge(interaction) {
         await msg.author.send(
           "⚠️ Please submit your code as a file attachment only."
         );
-        console.log(`Deleted message from ${msg.author.tag} (no attachment).`);
+        channels.botconsole.send(`Deleted message from ${msg.author.tag} (no attachment).`);
       } catch (err) {
         console.error(`Could not delete message from ${msg.author.tag}:`, err);
       }
@@ -1339,7 +1359,7 @@ async function challenge(interaction) {
         await msg.author.send(
           "⚠️ You have already submitted your code. Please wait for grading."
         );
-        console.log(`Deleted duplicate message from ${msg.author.tag}.`);
+        channels.botconsole.send(`Deleted duplicate message from ${msg.author.tag}.`);
       } catch (err) {
         console.error(
           `Could not delete duplicate message from ${msg.author.tag}:`,
@@ -1371,7 +1391,7 @@ async function challenge(interaction) {
       submissions.push(submission);
       submittedUsers.add(msg.author.id);
 
-      console.log(`✅ Accepted and read submission from ${msg.author.tag}`);
+      channels.botconsole.send(`✅ Accepted and read submission from ${msg.author.tag}`);
     } catch (err) {
       console.error(
         `❌ Failed to fetch or read attachment from ${msg.author.tag}:`,
@@ -1637,10 +1657,6 @@ async function schedule(interaction) {
 //   await interaction.reply({ content: `Saved score of ${score} for <@${userId}>.`, ephemeral: true });
 // });
 
-client.once("ready", () => {
-  console.log(`Logged in as ${client.user.tag}!`);
-});
-
 // Slash Command Handling
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
@@ -1718,11 +1734,9 @@ allCommands.forEach((cmd) => {
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 (async () => {
   try {
-    console.log("Registering slash commands...");
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
       body: commands,
     });
-    console.log("Slash commands registered!");
   } catch (error) {
     console.error(error);
   }
