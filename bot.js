@@ -1772,6 +1772,7 @@ async function schedule(interaction) {
 }
 
 client.on("ready", () => {
+  console.log(`🤖 Bot is online as ${client.user.tag}`);
   const startchat = allCommands.find((cmd) => cmd.commandName1 === "startchat");
   if (startchat && typeof startchat.listenToFeeds === "function") {
     startchat.listenToFeeds(client);
