@@ -1776,7 +1776,6 @@ client.on("ready", () => {
   const startchat = allCommands.find((cmd) => cmd.commandName1 === "startchat");
   if (startchat && typeof startchat.listenToFeeds === "function") {
     startchat.listenToFeeds(client);
-    console.log("📡 Started listening for chat feeds");
   }
 });
 

@@ -48,8 +48,6 @@ const mentionRelay = {
           channelId: message.channel.id,
           messageId: message.id,
         });
-
-        console.log(`🧵 Created relay thread: ${thread.name}`);
       } catch (err) {
         console.error("Error forwarding message to thread:", err);
       }
@@ -84,8 +82,6 @@ const mentionRelay = {
         }
 
         await originalChannel.send(sendPayload);
-
-        console.log(`🔁 Relayed message from thread "${thread.name}"`);
       } catch (err) {
         console.error("Failed to relay thread message back:", err);
       }
