@@ -16,6 +16,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
+  MessageFlags,
 } from "discord.js";
 import fetch from "node-fetch";
 import { PythonShell } from "python-shell";
@@ -26,7 +27,7 @@ import mentionRelay from "./mentionRelay.js"; // adjust path if needed
 import dotenv from "dotenv";
 import { time } from "console";
 dotenv.config();
-import controlServer from './controlServer.js';
+import controlServer from "./controlServer.js";
 
 const client = new Client({
   intents: [
@@ -42,16 +43,17 @@ const client = new Client({
   ],
 });
 
-
-
 const channels = {}; // This will hold our named channel accessors
+const activeChatFeeds = new Map();
 
 client.once("ready", async () => {
   const guild = await client.guilds.fetch(process.env.CONTROL_GUILD_ID);
   const allChannels = await guild.channels.fetch();
 
   const desired = process.env.CONTROL_CHANNEL_NAMES
-    ? process.env.CONTROL_CHANNEL_NAMES.split(",").map((n) => n.trim().toLowerCase())
+    ? process.env.CONTROL_CHANNEL_NAMES.split(",").map((n) =>
+        n.trim().toLowerCase()
+      )
     : [];
 
   for (const ch of allChannels.values()) {
@@ -71,8 +73,6 @@ client.once("ready", async () => {
     console.warn("⚠️ 'commands' channel not found.");
   }
 });
-
-
 
 controlServer.init(client);
 
@@ -557,6 +557,135 @@ const allCommands = [
     ],
     execute: schedule,
   },
+  {
+    commandName1: "startchat",
+    description: "Start a relay thread for a selected channel",
+    options: [
+      {
+        type: "string",
+        name: "guildid",
+        description: "Guild to relay from",
+        required: true,
+        autocomplete: true,
+      },
+      {
+        type: "string",
+        name: "channelid",
+        description: "Channel ID to mirror",
+        required: true,
+        autocomplete: true,
+      },
+    ],
+
+    async execute(interaction) {
+      const controlGuildId = process.env.CONTROL_GUILD_ID;
+      const controlChannelName = "chats";
+      const channel = interaction.channel;
+
+      if (
+        interaction.guildId !== controlGuildId ||
+        channel.name !== controlChannelName
+      ) {
+        return interaction.reply({
+          content:
+            "❌ You can only use this command in #chats on the control server.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const guildId = interaction.options.getString("guildid");
+      // console.log(typeof guildId, " " + guildId);
+      const channelId = interaction.options.getString("channelid");
+      // console.log(typeof channelId, " " + channelId);
+      const key = `${guildId}_${channelId}`;
+
+      if (activeChatFeeds.has(key)) {
+        return interaction.reply({
+          content: "⚠️ A feed for that channel is already active.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      try {
+        const targetGuild = await interaction.client.guilds.fetch(guildId);
+        const sourceChannel = await targetGuild.channels.fetch(channelId);
+
+        if (!sourceChannel || !sourceChannel.isTextBased()) {
+          return interaction.reply({
+            content: "❌ That channel is invalid or not text-based.",
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+
+        const relayThread = await channel.threads.create({
+          name: `Chat from #${sourceChannel.name}`,
+          autoArchiveDuration: 60,
+          reason: `Relaying messages from #${sourceChannel.name}`,
+        });
+
+        activeChatFeeds.set(key, relayThread);
+
+        await interaction.reply({
+          content: `✅ Started chat relay for **#${sourceChannel.name}** from **${targetGuild.name}** in <#${relayThread.id}>.`,
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (err) {
+        console.error("Error setting up /startchat:", err);
+        return interaction.reply({
+          content: "❌ Failed to set up chat feed.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+    },
+
+    async autocomplete(interaction) {
+      const focused = interaction.options.getFocused(true);
+
+      if (focused.name === "guild") {
+        const guilds = await interaction.client.guilds.fetch();
+        const choices = Array.from(guilds.values())
+          .slice(0, 25)
+          .map((guild) => ({
+            name: guild.name,
+            value: guild.id,
+          }));
+        return interaction.respond(choices);
+      }
+
+      if (focused.name === "channel") {
+        const guildId = interaction.options.getString("guild");
+        if (!guildId) return interaction.respond([]);
+        try {
+          const guild = await interaction.client.guilds.fetch(guildId);
+          const channels = await guild.channels.fetch();
+          const choices = Array.from(channels.values())
+            .filter((ch) => ch.type === ChannelType.GuildText)
+            .slice(0, 25)
+            .map((ch) => ({ name: `#${ch.name}`, value: ch.id }));
+          return interaction.respond(choices);
+        } catch (e) {
+          return interaction.respond([]);
+        }
+      }
+    },
+
+    listenToFeeds(client) {
+      client.on("messageCreate", async (message) => {
+        if (message.author.bot) return;
+
+        const key = `${message.guildId}_${message.channelId}`;
+        const thread = activeChatFeeds.get(key);
+
+        if (!thread) return;
+
+        thread
+          .send({
+            content: `**${message.author.tag}:** ${message.content}`,
+          })
+          .catch(console.error);
+      });
+    },
+  },
 ];
 
 async function ping(interaction) {
@@ -576,7 +705,6 @@ async function ping(interaction) {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   const uptimeString = `${days}d ${hours}h ${minutes}m ${seconds}s`;
-
 
   const embed = {
     color: 0x00ffcc,
@@ -680,7 +808,9 @@ async function troubleshoot(interaction) {
 
   await interaction.reply({ embeds: [embed] });
 
-  channels.botconsole.send(`Troubleshoot used by ${interaction.user.tag} - Error: ${error}`);
+  channels.botconsole.send(
+    `Troubleshoot used by ${interaction.user.tag} - Error: ${error}`
+  );
 }
 
 async function help(interaction) {
@@ -771,7 +901,9 @@ async function info(interaction) {
   }
 
   await interaction.reply({ embeds: [embed] });
-  channels.botconsole.send(`Info command used by ${interaction.user.tag} for '${from}'`);
+  channels.botconsole.send(
+    `Info command used by ${interaction.user.tag} for '${from}'`
+  );
 }
 
 async function packageInfo(interaction) {
@@ -817,7 +949,9 @@ async function packageInfo(interaction) {
       );
     }
 
-    channels.botconsole.send(`✅ Package '${name}' info retrieved from '${source}'`);
+    channels.botconsole.send(
+      `✅ Package '${name}' info retrieved from '${source}'`
+    );
     await interaction.editReply({ embeds: [embed] });
   } catch (err) {
     console.error(`❗ Error fetching '${name}' from '${source}':`, err);
@@ -939,7 +1073,7 @@ async function snippet(interaction) {
   if (!codeSnippet) {
     return await interaction.reply({
       content: "Sorry, no example found for this concept.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -951,7 +1085,8 @@ async function snippet(interaction) {
     .setColor("#0099FF") // Set color
     .setTitle(`Example: ${concept.charAt(0).toUpperCase() + concept.slice(1)}`) // Title based on the concept
     .setDescription(
-      `Here is an example for **${concept.charAt(0).toUpperCase() + concept.slice(1)
+      `Here is an example for **${
+        concept.charAt(0).toUpperCase() + concept.slice(1)
       }**:`
     )
     .addFields({
@@ -978,7 +1113,7 @@ async function docService(interaction) {
   if (!docLink) {
     return await interaction.reply({
       content: "Sorry, no documentation found for this service.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -1070,7 +1205,12 @@ async function debug(interaction) {
   const codeSnippet = interaction.options.getString("code");
 
   // Log the received code snippet for debugging purposes
-  channels.botconsole.send("Received code for debugging in", language, ":", codeSnippet);
+  channels.botconsole.send(
+    "Received code for debugging in",
+    language,
+    ":",
+    codeSnippet
+  );
 
   // Execute the code based on the language
   let result;
@@ -1233,7 +1373,7 @@ async function gitfind(interaction) {
     if (!response.ok) {
       return await interaction.reply({
         content: `❌ Could not find repository \`${author}/${repo}\`.`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -1272,7 +1412,7 @@ async function gitfind(interaction) {
     console.error("GitHub fetch error:", error);
     await interaction.reply({
       content: `⚠️ An error occurred while fetching repo info.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -1282,7 +1422,7 @@ async function challenge(interaction) {
   if (!interaction.inGuild()) {
     return await interaction.reply({
       content: "This command can't be used in DMs.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -1290,7 +1430,7 @@ async function challenge(interaction) {
   if (!interaction.member.permissions.has("Administrator")) {
     return await interaction.reply({
       content: "Only server admins can use this command.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -1325,7 +1465,7 @@ async function challenge(interaction) {
 
   interaction.reply({
     content: `Challenge started in thread <#${thread.id}>`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 
   // Make collector pt.2
@@ -1346,7 +1486,9 @@ async function challenge(interaction) {
         await msg.author.send(
           "⚠️ Please submit your code as a file attachment only."
         );
-        channels.botconsole.send(`Deleted message from ${msg.author.tag} (no attachment).`);
+        channels.botconsole.send(
+          `Deleted message from ${msg.author.tag} (no attachment).`
+        );
       } catch (err) {
         console.error(`Could not delete message from ${msg.author.tag}:`, err);
       }
@@ -1359,7 +1501,9 @@ async function challenge(interaction) {
         await msg.author.send(
           "⚠️ You have already submitted your code. Please wait for grading."
         );
-        channels.botconsole.send(`Deleted duplicate message from ${msg.author.tag}.`);
+        channels.botconsole.send(
+          `Deleted duplicate message from ${msg.author.tag}.`
+        );
       } catch (err) {
         console.error(
           `Could not delete duplicate message from ${msg.author.tag}:`,
@@ -1391,7 +1535,9 @@ async function challenge(interaction) {
       submissions.push(submission);
       submittedUsers.add(msg.author.id);
 
-      channels.botconsole.send(`✅ Accepted and read submission from ${msg.author.tag}`);
+      channels.botconsole.send(
+        `✅ Accepted and read submission from ${msg.author.tag}`
+      );
     } catch (err) {
       console.error(
         `❌ Failed to fetch or read attachment from ${msg.author.tag}:`,
@@ -1451,7 +1597,7 @@ async function challenge(interaction) {
       if (graded.has(userId)) {
         await interaction.reply({
           content: "You've already graded this submission.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -1483,7 +1629,7 @@ async function challenge(interaction) {
           try {
             await interaction.followUp({
               content: "You've already graded this submission.",
-              ephemeral: true,
+              flags: MessageFlags.Ephemeral,
             });
           } catch (e) {
             console.warn("Failed to follow up:", e);
@@ -1492,7 +1638,7 @@ async function challenge(interaction) {
           try {
             await interaction.reply({
               content: "You've already graded this submission.",
-              ephemeral: true,
+              flags: MessageFlags.Ephemeral,
             });
           } catch (e) {
             console.warn("Failed to reply:", e);
@@ -1504,7 +1650,7 @@ async function challenge(interaction) {
       graded.add(userId);
       await interaction.reply({
         content: `Graded submission with a score of ${score}.`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
 
       if (graded.size === submissions.length) {
@@ -1533,7 +1679,7 @@ async function schedule(interaction) {
   if (!interaction.inGuild()) {
     return await interaction.reply({
       content: "This command can't be used in DMs.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -1541,7 +1687,7 @@ async function schedule(interaction) {
   if (!interaction.member.permissions.has("Administrator")) {
     return await interaction.reply({
       content: "Only server admins can use this command.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -1560,7 +1706,7 @@ async function schedule(interaction) {
   } catch (e) {
     return interaction.reply({
       content: "❌ Failed to parse `args`. Make sure it's valid JSON.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -1571,7 +1717,7 @@ async function schedule(interaction) {
   if (delayMs <= 0) {
     return interaction.reply({
       content: "❌ That time is in the past. Please choose a future time.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -1625,6 +1771,46 @@ async function schedule(interaction) {
   }, delayMs);
 }
 
+client.on("ready", () => {
+  const startchat = allCommands.find((cmd) => cmd.commandName1 === "startchat");
+  if (startchat && typeof startchat.listenToFeeds === "function") {
+    startchat.listenToFeeds(client);
+    console.log("📡 Started listening for chat feeds");
+  }
+});
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand() && !interaction.isAutocomplete())
+    return;
+
+  // Find the command in the array by name
+  const command = commands.find(
+    (cmd) => cmd.commandName1 === "startchat"
+  );
+  if (!command) return; // command not found, ignore
+
+  try {
+    if (interaction.isChatInputCommand()) {
+      await command.execute(interaction);
+    } else if (interaction.isAutocomplete()) {
+      await command.autocomplete(interaction);
+    }
+  } catch (error) {
+    console.error(`Error executing ${interaction.commandName}:`, error);
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({
+        content: "There was an error executing this command!",
+        ephemeral: true,
+      });
+    } else {
+      await interaction.reply({
+        content: "There was an error executing this command!",
+        ephemeral: true,
+      });
+    }
+  }
+});
+
 // client.on('interactionCreate', async interaction => {
 //   if (!interaction.isModalSubmit()) return;
 //   if (!interaction.customId.startsWith('rate_')) return;
@@ -1654,7 +1840,7 @@ async function schedule(interaction) {
 //     activeChallenges.delete(threadId);
 //   }
 
-//   await interaction.reply({ content: `Saved score of ${score} for <@${userId}>.`, ephemeral: true });
+//   await interaction.reply({ content: `Saved score of ${score} for <@${userId}>.`, flags: MessageFlags.Ephemeral });
 // });
 
 // Slash Command Handling
