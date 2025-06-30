@@ -74,7 +74,7 @@ client.once("ready", async () => {
   }
 });
 
-controlServer.init(client);
+
 
 // Listen for mentions and forward the message to the specified user
 client.on(mentionRelay.name, mentionRelay.execute);
@@ -687,6 +687,8 @@ const allCommands = [
     },
   },
 ];
+
+controlServer.init(client, allCommands);
 
 async function ping(interaction) {
   const sent = Date.now();
