@@ -74,8 +74,6 @@ client.once("ready", async () => {
   }
 });
 
-
-
 // Listen for mentions and forward the message to the specified user
 client.on(mentionRelay.name, mentionRelay.execute);
 
@@ -623,7 +621,7 @@ const allCommands = [
           reason: `Relaying messages from #${sourceChannel.name}`,
         });
 
-        activeChatFeeds.set(key, relayThread);
+        activeChatFeeds.set(relayThread.id, { guildId, channelId });
 
         await interaction.reply({
           content: `✅ Started chat relay for **#${sourceChannel.name}** from **${targetGuild.name}** in <#${relayThread.id}>.`,
@@ -676,13 +674,33 @@ const allCommands = [
         const key = `${message.guildId}_${message.channelId}`;
         const thread = activeChatFeeds.get(key);
 
-        if (!thread) return;
+        // FROM original channel ➜ to thread
+        if (thread && thread.id !== message.channelId) {
+          try {
+            await thread.send(`**${message.author.tag}:** ${message.content}`);
+          } catch (err) {
+            console.error("Error relaying to thread:", err);
+          }
+          return;
+        }
 
-        thread
-          .send({
-            content: `**${message.author.tag}:** ${message.content}`,
-          })
-          .catch(console.error);
+        // FROM thread ➜ back to original channel
+        const reverse = activeChatFeeds.get(message.channelId);
+        if (reverse) {
+          const { guildId, channelId } = reverse;
+          const targetGuild = await client.guilds.fetch(guildId);
+          const originalChannel = await targetGuild.channels.fetch(channelId);
+
+          if (!originalChannel || !originalChannel.isTextBased()) return;
+
+          try {
+            await originalChannel.send(
+              message.content
+            );
+          } catch (err) {
+            console.error("Error relaying back to original channel:", err);
+          }
+        }
       });
     },
   },
@@ -1786,9 +1804,7 @@ client.on("interactionCreate", async (interaction) => {
     return;
 
   // Find the command in the array by name
-  const command = commands.find(
-    (cmd) => cmd.commandName1 === "startchat"
-  );
+  const command = commands.find((cmd) => cmd.commandName1 === "startchat");
   if (!command) return; // command not found, ignore
 
   try {
