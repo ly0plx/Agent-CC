@@ -1867,7 +1867,7 @@ client.on('messageCreate', async (message) => {
 
   // Check if the message content is exactly "hehe"
   if (message.content.trim().toLowerCase() === 'hehe') {
-    await message.reply('HEHEHEHEHEHE 😈');
+    await message.reply('HEHEHEHEHEHE ');
   channels.botconsole.send(`hehe used`)
   }
 });
