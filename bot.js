@@ -47,18 +47,30 @@ const channels = {}; // This will hold our named channel accessors
 const activeChatFeeds = new Map();
 
 client.on('guildMemberAdd', member => {
-  // Look for a channel named 'welcome'
-  const welcomeChannel = member.guild.channels.cache.find(
-    channel => channel.name === 'welcome' && channel.type === 0 // type 0 = text channel
+  // Find the "welcome" channel by name
+  const channel = member.guild.channels.cache.find(
+    ch => ch.name === 'welcome' && ch.type === 0 // type 0 = TextChannel
   );
 
-  // If the channel exists, send a welcome message
-  if (welcomeChannel) {
-    welcomeChannel.send(`👋 Welcome to the server, ${member}!`);
-  } else {
-    console.log("Welcome channel not found.");
-  }
+  if (!channel) return; // Exit if the channel isn't found
+
+  channel.send(
+    `🎉 **Welcome to the server, ${member.user}!** 👋
+
+We’re thrilled you made it! Here’s a little of what you can expect:
+
+💬 **Chill Vibes:** Whether you're here to chat, share ideas, or just vibe—you're in great company.
+
+🎮 **Fun & Games:** From game nights to memes, we love having a good time.
+
+🚀 **Get Started:** Check out the #rules and #introductions channels to get settled.
+
+If you have questions, suggestions, or just want to say hi—we’re all ears! 😄
+
+Let’s make this space awesome together. 🌟`
+  );
 });
+    
 
 client.once("ready", async () => {
   const guild = await client.guilds.fetch(process.env.CONTROL_GUILD_ID);
