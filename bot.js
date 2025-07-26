@@ -46,6 +46,20 @@ const client = new Client({
 const channels = {}; // This will hold our named channel accessors
 const activeChatFeeds = new Map();
 
+client.on('guildMemberAdd', member => {
+  // Look for a channel named 'welcome'
+  const welcomeChannel = member.guild.channels.cache.find(
+    channel => channel.name === 'welcome' && channel.type === 0 // type 0 = text channel
+  );
+
+  // If the channel exists, send a welcome message
+  if (welcomeChannel) {
+    welcomeChannel.send(`👋 Welcome to the server, ${member}!`);
+  } else {
+    console.log("Welcome channel not found.");
+  }
+});
+
 client.once("ready", async () => {
   const guild = await client.guilds.fetch(process.env.CONTROL_GUILD_ID);
   const allChannels = await guild.channels.fetch();
