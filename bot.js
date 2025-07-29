@@ -21,6 +21,10 @@ import {
 import fetch from "node-fetch";
 import { PythonShell } from "python-shell";
 import { exec } from "child_process";
+import { dirname } from "path";
+import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 import fs from "fs";
 import path from "path";
 import mentionRelay from "./mentionRelay.js"; // adjust path if needed
