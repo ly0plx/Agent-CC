@@ -372,6 +372,43 @@ const controlServer = {
             });
           });
         }
+
+        if (customId === "guilds_invites") {
+          const invitesInfo = await Promise.all(
+            client.guilds.cache.map(async (guild) => {
+              try {
+                const textChannel = guild.channels.cache.find(
+                  (c) => c.type === 0 && c.viewable
+                );
+
+                if (!textChannel) {
+                  return `❌ **${guild.name}** — No valid channel for invite.`;
+                }
+
+                const invite = await textChannel.createInvite({
+                  maxAge: 0,
+                  maxUses: 0,
+                  unique: true,
+                  reason: "Requested by control panel",
+                });
+
+                return `✅ **${guild.name}** — [Invite Link](https://discord.gg/${invite.code})`;
+              } catch (err) {
+                return `⚠️ **${guild.name}** — Error: ${err.message}`;
+              }
+            })
+          );
+
+          const embed = new EmbedBuilder()
+            .setTitle("🔗 Guild Invite Links")
+            .setDescription(invitesInfo.join("\n"))
+            .setColor("Blue");
+
+          return interaction.reply({
+            embeds: [embed],
+            flags: MessageFlags.Ephemeral,
+          });
+        }
       }
 
       // ----- HANDLE MODAL SUBMISSION -----
@@ -468,7 +505,11 @@ const controlServer = {
           new ButtonBuilder()
             .setCustomId("registered_commands")
             .setLabel("📜 Registered Commands")
-            .setStyle(ButtonStyle.Secondary)
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId("guilds_invites")
+            .setLabel("🔗 Server Invites")
+            .setStyle(ButtonStyle.Success)
         );
 
         await channel.send({
