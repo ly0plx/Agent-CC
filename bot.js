@@ -472,33 +472,6 @@ const allCommands = [
     execute: wikiSearch,
   },
   {
-    commandName1: "debug",
-    description: "Submit your code to debug it in various languages",
-    options: [
-      {
-        type: "string",
-        name: "language",
-        description: "The coding language",
-        required: true,
-        choices: [
-          { name: "Python", value: "python" },
-          { name: "JavaScript", value: "javascript" },
-          { name: "TypeScript", value: "typescript" },
-          { name: "C", value: "c" },
-          { name: "C++", value: "cpp" },
-          { name: "C#", value: "csharp" },
-        ],
-      },
-      {
-        type: "string",
-        description: "The code to debug",
-        name: "code",
-        required: true,
-      },
-    ],
-    execute: debug,
-  },
-  {
     commandName1: "gitfind",
     description: "Find details about a repository",
     options: [
@@ -1248,29 +1221,6 @@ async function wikiSearch(interaction) {
   }
 
   await interaction.editReply({ embeds: [embed] });
-}
-
-async function debug(interaction) {
-  const language = interaction.options.getString("language");
-  const codeSnippet = interaction.options.getString("code");
-
-  // Log the received code snippet for debugging purposes
-  channels.botconsole.send(
-    "Received code for debugging in",
-    language,
-    ":",
-    codeSnippet
-  );
-
-  // Execute the code based on the language
-  let result;
-  try {
-    result = await runCode(language, codeSnippet);
-  } catch (error) {
-    result = `Error occurred: ${error.message}`;
-  }
-
-  await interaction.reply(result);
 }
 
 async function runCode(language, codeSnippet) {
