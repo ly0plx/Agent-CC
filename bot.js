@@ -36,6 +36,7 @@ import controlServer from "./controlServer.js";
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent, // Ensure this is enabled
     GatewayIntentBits.DirectMessages, // Added for listening to DMs
@@ -78,8 +79,8 @@ Let’s make this space awesome together. 🌟`
 
 client.once("ready", async () => {
   client.user.setPresence({
-    activities: [{ name: 'with code', type: 'PLAYING' }],
-    status: 'online', // Options: 'online', 'idle', 'dnd', 'invisible'
+    activities: [{ name: 'with code'}],
+    status: 'idle', // Options: 'online', 'idle', 'dnd', 'invisible'
   });
 
   const guild = await client.guilds.fetch(process.env.CONTROL_GUILD_ID);
