@@ -304,7 +304,6 @@ const controlServer = {
           }
 
           envVars = fs.readFileSync(".env", "utf8");
-          console.log(envVars);
 
           const embed = new EmbedBuilder()
             .setTitle("🌍 Environment Variables")
@@ -329,7 +328,6 @@ const controlServer = {
             .setCustomId("edit_env_modal")
             .setTitle("Edit Environment Variable");
 
-          console.log(envVars);
 
           const input = new TextInputBuilder()
             .setCustomId("env_content")
@@ -412,21 +410,16 @@ const controlServer = {
       }
 
       // ----- HANDLE MODAL SUBMISSION -----
-      console.log("is modal submit:", interaction.isModalSubmit());
-      console.log("Modal customId:", interaction.customId);
       if (
         interaction.isModalSubmit() &&
         interaction.customId === "edit_env_modal"
       ) {
-        console.log("Check");
         if (interaction.user.id !== OWNER_ID) {
           return interaction.reply({
             content: "🚫 You're not authorized to edit the environment.",
             flags: MessageFlags.Ephemeral,
           });
         }
-
-        console.log("Modal submitted:", interaction.customId);
 
         const updatedEnv = interaction.fields.getTextInputValue("env_content");
 

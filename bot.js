@@ -1,3 +1,7 @@
+// bot.js - Main File
+
+
+// IMPORTS
 import {
   Client,
   GatewayIntentBits,
@@ -32,6 +36,7 @@ import dotenv from "dotenv";
 import { time } from "console";
 dotenv.config();
 import controlServer from "./controlServer.js";
+import settingsManager from "./settingsManager.js"; // adjust path if needed
 
 const client = new Client({
   intents: [
@@ -51,45 +56,50 @@ const client = new Client({
 const channels = {}; // This will hold our named channel accessors
 const activeChatFeeds = new Map();
 
-client.on('guildMemberAdd', member => {
-  // Find the "welcome" channel by name
-  const channel = member.guild.channels.cache.find(
-    ch => ch.name === 'welcome' && ch.type === 0 // type 0 = TextChannel
-  );
+// Guild Setup
+import guildSetup from './guildSetup.js';
+guildSetup(client);
 
-  if (!channel) return; // Exit if the channel isn't found
+// Welcome messages and settings
+client.on('guildMemberAdd', async (member) => {
+  try {
+    const settings = await settingsManager.getSettings(client, member.guild.id);
 
-  channel.send(
-    `🎉 **Welcome to the server, ${member.user}!** 👋
+    // Get the stored welcome channel ID from settings
+    const welcomeChannelId = settings.welcomeChannel;
+    if (!welcomeChannelId) return; // No welcome channel set, bail out
 
-We’re thrilled you made it! Here’s a little of what you can expect:
+    // Fetch the channel by ID
+    const channel = member.guild.channels.cache.get(welcomeChannelId);
+    if (!channel || channel.type !== ChannelType.GuildText) return; // Validate channel
 
-💬 **Chill Vibes:** Whether you're here to chat, share ideas, or just vibe—you're in great company.
+    const welcomeMsg = settings.welcomeMessage || "Welcome to the server, {username}!";
 
-🎮 **Fun & Games:** From game nights to memes, we love having a good time.
+    const finalMsg = welcomeMsg.replaceAll('{username}', `<@${member.id}>`);
 
-🚀 **Get Started:** Check out the #rules and #introductions channels to get settled.
+    await channel.send({ content: finalMsg });
 
-If you have questions, suggestions, or just want to say hi—we’re all ears! 😄
-
-Let’s make this space awesome together. 🌟`
-  );
+  } catch (err) {
+    console.error('Error sending welcome message:', err);
+  }
 });
-    
 
 client.once("ready", async () => {
+  // Set the bot's status and activity
   client.user.setPresence({
-    activities: [{ name: 'with code'}],
+    activities: [{ name: 'with code' }],
     status: 'idle', // Options: 'online', 'idle', 'dnd', 'invisible'
   });
+
+  // figure out which channels the bot has access to
 
   const guild = await client.guilds.fetch(process.env.CONTROL_GUILD_ID);
   const allChannels = await guild.channels.fetch();
 
   const desired = process.env.CONTROL_CHANNEL_NAMES
     ? process.env.CONTROL_CHANNEL_NAMES.split(",").map((n) =>
-        n.trim().toLowerCase()
-      )
+      n.trim().toLowerCase()
+    )
     : [];
 
   for (const ch of allChannels.values()) {
@@ -301,8 +311,12 @@ const motivationalQuotes = [
 ];
 
 const allCommands = [
-  { commandName1: "ping", description: "Replies with Pong!", execute: ping },
-  {
+  { // ping - ping()
+    commandName1: "ping",
+    description: "Replies with Pong!",
+    execute: ping
+  },
+  { // troubleshoot - troubleshoot()
     commandName1: "troubleshoot",
     description: "Search Common Error Database for solution",
     options: [
@@ -345,8 +359,12 @@ const allCommands = [
     ],
     execute: troubleshoot,
   },
-  { commandName1: "help", description: "Get help with the bot", execute: help }, // Placeholder for help command
-  {
+  { // help - help()
+    commandName1: "help",
+    description: "Get help with the bot",
+    execute: help
+  },
+  { // info - info()
     commandName1: "info",
     description: "Get info about the bot",
     options: [
@@ -364,7 +382,7 @@ const allCommands = [
     ],
     execute: info,
   },
-  {
+  { // package - packageInfo()
     commandName1: "package",
     description: "Get info about a package from a package registry",
     options: [
@@ -389,12 +407,12 @@ const allCommands = [
     ],
     execute: packageInfo,
   },
-  {
+  { // motivate - quote()
     commandName1: "motivate",
     description: "Get a random motivational quote",
     execute: quote,
   },
-  {
+  { // doc - docService()
     commandName1: "doc",
     description: "Get documentation link for a service",
     options: [
@@ -422,7 +440,7 @@ const allCommands = [
     ],
     execute: docService,
   },
-  {
+  { // suggest - suggest()
     commandName1: "suggest",
     description: "Suggest something to a user",
     options: [
@@ -441,7 +459,7 @@ const allCommands = [
     ],
     execute: suggest,
   },
-  {
+  { // snippet - snippet()
     commandName1: "snippet",
     description: "Get example code for a concept",
     options: [
@@ -464,7 +482,7 @@ const allCommands = [
     ],
     execute: snippet,
   },
-  {
+  { // wiki - wikiSearch()
     commandName1: "wiki",
     description: "Searches Wikipedia and gives first paragraph",
     options: [
@@ -477,7 +495,7 @@ const allCommands = [
     ],
     execute: wikiSearch,
   },
-  {
+  { // gitfind - gitfind()
     commandName1: "gitfind",
     description: "Find details about a repository",
     options: [
@@ -496,9 +514,10 @@ const allCommands = [
     ],
     execute: gitfind,
   },
-  {
+  { // challenge - challenge()
     commandName1: "challenge",
     description: "Create a timed coding challenge (Admin only)",
+    adminOnly: true, // Only allow admins to use this command
     options: [
       {
         type: "string",
@@ -515,7 +534,7 @@ const allCommands = [
     ],
     execute: challenge,
   },
-  {
+  { // schedule - schedule()
     commandName1: "schedule",
     description: "Schedule a command to run later (Admin & Server only)",
     options: [
@@ -564,9 +583,10 @@ const allCommands = [
     ],
     execute: schedule,
   },
-  {
+  { // startchat - has its own 
     commandName1: "startchat",
     description: "Start a relay thread for a selected channel",
+    adminOnly: true, // Only allow admins to use this comman
     options: [
       {
         type: "string",
@@ -713,9 +733,32 @@ const allCommands = [
       });
     },
   },
+  { // send - sendMessage()
+    commandName1: "send",
+    description: "Send a message to a channel",
+    adminOnly: true, // Only allow admins to use this command
+    options: [
+      {
+        type: "channel",
+        name: "channel",
+        description: "Channel to send the message to",
+        required: true,
+        autocomplete: true,
+      },
+      {
+        type: "string",
+        name: "message",
+        description: "Message to send",
+        required: true,
+      },
+    ],
+    execute: sendMessage
+  }
 ];
 
 controlServer.init(client, allCommands);
+
+// #region Command Executables
 
 async function ping(interaction) {
   const sent = Date.now();
@@ -1114,8 +1157,7 @@ async function snippet(interaction) {
     .setColor("#0099FF") // Set color
     .setTitle(`Example: ${concept.charAt(0).toUpperCase() + concept.slice(1)}`) // Title based on the concept
     .setDescription(
-      `Here is an example for **${
-        concept.charAt(0).toUpperCase() + concept.slice(1)
+      `Here is an example for **${concept.charAt(0).toUpperCase() + concept.slice(1)
       }**:`
     )
     .addFields({
@@ -1227,145 +1269,6 @@ async function wikiSearch(interaction) {
   }
 
   await interaction.editReply({ embeds: [embed] });
-}
-
-async function runCode(language, codeSnippet) {
-  switch (language) {
-    case "python":
-      return runPython(codeSnippet);
-    case "javascript":
-      return runJavaScript(codeSnippet);
-    case "typescript":
-      return runTypeScript(codeSnippet);
-    case "c":
-      return runC(codeSnippet);
-    case "cpp":
-      return runCpp(codeSnippet);
-    case "csharp":
-      return runCSharp(codeSnippet);
-    default:
-      throw new Error("Unsupported language");
-  }
-}
-
-async function runPython(codeSnippet) {
-  const tempFilePath = path.join(__dirname, "temp_code.py");
-  fs.writeFileSync(tempFilePath, codeSnippet);
-
-  return new Promise((resolve, reject) => {
-    PythonShell.run(tempFilePath, null, (err, results) => {
-      if (err) {
-        reject(`Error: ${err.message}`);
-      } else {
-        resolve(`Output: ${results.join("\n")}`);
-      }
-    });
-  });
-}
-
-async function runJavaScript(codeSnippet) {
-  const tempFilePath = path.join(__dirname, "temp_code.js");
-  fs.writeFileSync(tempFilePath, codeSnippet);
-
-  return new Promise((resolve, reject) => {
-    exec(`node ${tempFilePath}`, (err, stdout, stderr) => {
-      if (err) {
-        reject(`Error: ${stderr}`);
-      } else {
-        resolve(`Output: ${stdout}`);
-      }
-    });
-  });
-}
-
-async function runTypeScript(codeSnippet) {
-  const tempFilePath = path.join(__dirname, "temp_code.ts");
-  fs.writeFileSync(tempFilePath, codeSnippet);
-
-  return new Promise((resolve, reject) => {
-    exec(`ts-node ${tempFilePath}`, (err, stdout, stderr) => {
-      if (err) {
-        reject(`Error: ${stderr}`);
-      } else {
-        resolve(`Output: ${stdout}`);
-      }
-    });
-  });
-}
-
-async function runC(codeSnippet) {
-  const tempFilePath = path.join(__dirname, "temp_code.c");
-  const tempExecutablePath = path.join(__dirname, "temp_code.out");
-  fs.writeFileSync(tempFilePath, codeSnippet);
-
-  return new Promise((resolve, reject) => {
-    exec(
-      `gcc ${tempFilePath} -o ${tempExecutablePath}`,
-      (err, stdout, stderr) => {
-        if (err) {
-          reject(`Error: ${stderr}`);
-        } else {
-          exec(`${tempExecutablePath}`, (execErr, execStdout, execStderr) => {
-            if (execErr) {
-              reject(`Error: ${execStderr}`);
-            } else {
-              resolve(`Output: ${execStdout}`);
-            }
-          });
-        }
-      }
-    );
-  });
-}
-
-async function runCpp(codeSnippet) {
-  const tempFilePath = path.join(__dirname, "temp_code.cpp");
-  const tempExecutablePath = path.join(__dirname, "temp_code.out");
-  fs.writeFileSync(tempFilePath, codeSnippet);
-
-  return new Promise((resolve, reject) => {
-    exec(
-      `g++ ${tempFilePath} -o ${tempExecutablePath}`,
-      (err, stdout, stderr) => {
-        if (err) {
-          reject(`Error: ${stderr}`);
-        } else {
-          exec(`${tempExecutablePath}`, (execErr, execStdout, execStderr) => {
-            if (execErr) {
-              reject(`Error: ${execStderr}`);
-            } else {
-              resolve(`Output: ${execStdout}`);
-            }
-          });
-        }
-      }
-    );
-  });
-}
-
-async function runCSharp(codeSnippet) {
-  const tempFilePath = path.join(__dirname, "temp_code.cs");
-  const tempExecutablePath = path.join(__dirname, "temp_code.exe");
-  fs.writeFileSync(tempFilePath, codeSnippet);
-
-  return new Promise((resolve, reject) => {
-    exec(
-      `csc ${tempFilePath} -out:${tempExecutablePath}`,
-      (err, stdout, stderr) => {
-        if (err) {
-          reject(`Error: ${stderr}`);
-        } else {
-          exec(`${tempExecutablePath}`, (execErr, execStdout, execStderr) => {
-            if (execErr) {
-              reject(`Error: ${execStderr}`);
-            } else {
-              resolve(`Output: ${execStdout}`);
-            }
-          });
-        }
-      }
-    );
-  });
 }
 
 async function gitfind(interaction) {
@@ -1777,6 +1680,40 @@ async function schedule(interaction) {
   }, delayMs);
 }
 
+async function sendMessage(interaction) {
+  // Get the channel and message content
+  const channel = interaction.options.getChannel("channel");
+  const messageContent = interaction.options.getString("message");
+
+  if (!channel || !messageContent) {
+    return await interaction.reply({
+      content: "Please specify a valid channel and message.",
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
+  try {
+    await channel.send(messageContent);
+    await interaction.reply({
+      content: `✅ Message sent to ${channel}.`,
+      flags: MessageFlags.Ephemeral,
+    });
+    channels.botconsole.send(
+      `Message sent by ${interaction.user.tag} to ${channel.name}`
+    );
+  } catch (error) {
+    console.error(`Failed to send message: ${error}`);
+    await interaction.reply({
+      content: "❌ Failed to send the message.",
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
+// #endregion
+
+// #region Client Setup
+
 client.on("ready", () => {
   console.log(`🤖 Bot is online as ${client.user.tag}`);
   const startchat = allCommands.find((cmd) => cmd.commandName1 === "startchat");
@@ -1854,7 +1791,7 @@ client.on('messageCreate', async (message) => {
   // Check if the message content is exactly "hehe"
   if (message.content.trim().toLowerCase() === 'hehe') {
     await message.reply('HEHEHEHEHEHE ');
-  channels.botconsole.send(`hehe used`)
+    channels.botconsole.send(`hehe used`)
   }
 });
 
@@ -1876,6 +1813,13 @@ allCommands.forEach((cmd) => {
   let builder = new SlashCommandBuilder()
     .setName(cmd.commandName1)
     .setDescription(cmd.description);
+
+  if (cmd.adminOnly) {
+    builder.setDefaultMemberPermissions(
+      PermissionFlagsBits.Administrator
+    );
+    builder.setContexts([0]);
+  }
 
   if (cmd.options) {
     cmd.options.forEach((opt) => {
@@ -1924,6 +1868,18 @@ allCommands.forEach((cmd) => {
           );
           break;
 
+        case "channel":
+          builder.addChannelOption((option) =>
+            option
+              .setName(opt.name)
+              .setDescription(opt.description)
+              .setRequired(opt.required)
+              .addChannelTypes(
+                ChannelType.GuildText,
+                ChannelType.GuildAnnouncement
+              )
+          );
+          break;
         // Add more types if needed
       }
     });
@@ -1944,3 +1900,5 @@ const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 })();
 
 client.login(process.env.TOKEN);
+
+// #endregion
