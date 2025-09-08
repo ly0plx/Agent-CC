@@ -11,60 +11,74 @@ import {
   ChannelSelectMenuBuilder
 } from 'discord.js';
 
-export default (client) => {
-  client.on('guildCreate', async (guild) => {
-    try {
-      let configChannel = guild.channels.cache.find(
-        c => c.name === 'bot-config' && c.type === ChannelType.GuildText
-      );
+async function ensureGuildSetup(guild, client) {
+  try {
+    // ===== Ensure bot-config channel =====
+    let configChannel = guild.channels.cache.find(
+      c => c.name === 'bot-config' && c.type === ChannelType.GuildText
+    );
+    if (!configChannel) {
+      configChannel = await guild.channels.create({
+        name: 'bot-config',
+        type: ChannelType.GuildText,
+        permissionOverwrites: [
+          {
+            id: guild.roles.everyone,
+            deny: [PermissionsBitField.Flags.ViewChannel]
+          },
+          {
+            id: guild.roles.cache.find(r => r.permissions.has(PermissionsBitField.Flags.Administrator))?.id || guild.ownerId,
+            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+          }
+        ]
+      });
+      console.log(`✅ Created bot-config in ${guild.name}`);
+    }
 
-      if (!configChannel) {
-        configChannel = await guild.channels.create({
-          name: 'bot-config',
-          type: ChannelType.GuildText,
-          permissionOverwrites: [
-            {
-              id: guild.roles.everyone,
-              deny: [PermissionsBitField.Flags.ViewChannel]
-            },
-            {
-              id: guild.roles.cache.find(r => r.permissions.has(PermissionsBitField.Flags.Administrator))?.id || guild.ownerId,
-              allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-            }
-          ]
-        });
+    // ===== Ensure _bot-settings channel =====
+    let settingsChannel = guild.channels.cache.find(
+      c => c.name === '_bot-settings' && c.type === ChannelType.GuildText
+    );
+    if (!settingsChannel) {
+      settingsChannel = await guild.channels.create({
+        name: '_bot-settings',
+        type: ChannelType.GuildText,
+        permissionOverwrites: [
+          { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
+          { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
+        ]
+      });
+
+      await settingsChannel.send("```json\n" + JSON.stringify({
+        welcomeChannel: null,
+        botAnnouncements: null,
+        modLogs: null,
+        suggestions: null,
+        welcomeMessage: "Welcome to the server, {username}!",
+        goodbyeMessage: "Goodbye {username}, we'll miss you!"
+      }, null, 2) + "\n```");
+
+      console.log(`✅ Created _bot-settings in ${guild.name}`);
+    } else {
+      // If channel exists, make sure message exists + valid JSON
+      const messages = await settingsChannel.messages.fetch({ limit: 1 });
+      const msg = messages.first();
+      if (!msg) {
+        await settingsChannel.send("```json\n{}\n```");
+        console.log(`📌 Added default settings message in ${guild.name}`);
+      } else {
+        try {
+          JSON.parse(msg.content.replace(/```json|```/g, '').trim());
+        } catch {
+          await msg.edit("```json\n{}\n```");
+          console.log(`🔧 Repaired invalid settings in ${guild.name}`);
+        }
       }
+    }
 
-      let settingsChannel = guild.channels.cache.find(
-        c => c.name === '_bot-settings' && c.type === ChannelType.GuildText
-      );
-
-      if (!settingsChannel) {
-        settingsChannel = await guild.channels.create({
-          name: '_bot-settings',
-          type: ChannelType.GuildText,
-          permissionOverwrites: [
-            {
-              id: guild.roles.everyone,
-              deny: [PermissionsBitField.Flags.ViewChannel]
-            },
-            {
-              id: guild.members.me.id,
-              allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
-            }
-          ]
-        });
-
-        await settingsChannel.send("```json\n" + JSON.stringify({
-          welcomeChannel: null,
-          botAnnouncements: null,
-          modLogs: null,
-          suggestions: null,
-          welcomeMessage: "Welcome to the server, {username}!",
-          goodbyeMessage: "Goodbye {username}, we'll miss you!"
-        }, null, 2) + "\n```");
-      }
-
+    // ===== Ensure config embed in bot-config =====
+    const recent = await configChannel.messages.fetch({ limit: 1 });
+    if (!recent.size) {
       await configChannel.send({
         embeds: [{
           title: 'Bot Configuration',
@@ -81,12 +95,25 @@ export default (client) => {
           }
         ]
       });
+      console.log(`📌 Posted config panel in ${guild.name}`);
+    }
+  } catch (err) {
+    console.error(`❌ Setup failed for ${guild.name}:`, err);
+  }
+}
 
-    } catch (err) {
-      console.error(`Failed setup in ${guild.name}:`, err);
+
+export default (client) => {
+  client.once('ready', async () => {
+    for (const [guildId, guild] of client.guilds.cache) {
+      await ensureGuildSetup(guild, client);
     }
   });
 
+  client.on('guildCreate', async (guild) => {
+    await ensureGuildSetup(guild, client);
+  });
+  
   client.on('interactionCreate', async (interaction) => {
     if (
       !interaction.isButton() &&
@@ -159,137 +186,137 @@ export default (client) => {
                 .setMinValues(1)
                 .setMaxValues(1)
             )
-            
+
           ]
-      });
-  return;
-}
+        });
+        return;
+      }
 
-if (interaction.customId === 'edit_auto_messages') {
-  const embed = new EmbedBuilder()
-    .setTitle('Edit Auto Messages')
-    .setDescription('Edit the automatic messages the bot sends. Use `{username}` as a placeholder for the user\'s name.')
-    .setColor(0x5865F2);
+      if (interaction.customId === 'edit_auto_messages') {
+        const embed = new EmbedBuilder()
+          .setTitle('Edit Auto Messages')
+          .setDescription('Edit the automatic messages the bot sends. Use `{username}` as a placeholder for the user\'s name.')
+          .setColor(0x5865F2);
 
-  const components = [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('edit_welcome_message')
-        .setLabel('Edit Welcome Message')
-        .setStyle(ButtonStyle.Primary)
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('edit_goodbye_message')
-        .setLabel('Edit Goodbye Message')
-        .setStyle(ButtonStyle.Primary)
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('reset_auto_messages')
-        .setLabel('Reset to Default')
-        .setStyle(ButtonStyle.Danger)
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('back_to_config')
-        .setLabel('Back to Config')
-        .setStyle(ButtonStyle.Secondary)
-    )
-  ];
+        const components = [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('edit_welcome_message')
+              .setLabel('Edit Welcome Message')
+              .setStyle(ButtonStyle.Primary)
+          ),
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('edit_goodbye_message')
+              .setLabel('Edit Goodbye Message')
+              .setStyle(ButtonStyle.Primary)
+          ),
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('reset_auto_messages')
+              .setLabel('Reset to Default')
+              .setStyle(ButtonStyle.Danger)
+          ),
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('back_to_config')
+              .setLabel('Back to Config')
+              .setStyle(ButtonStyle.Secondary)
+          )
+        ];
 
-  await interaction.update({
-    embeds: [embed],
-    components
-  });
-  return;
-}
+        await interaction.update({
+          embeds: [embed],
+          components
+        });
+        return;
+      }
 
-if (interaction.customId === 'back_to_config') {
-  await interaction.update({
-    embeds: [{
-      title: 'Bot Configuration',
-      description: 'Use the buttons below to configure the bot’s settings.',
-      color: 0x5865F2
-    }],
-    components: [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('set_channels')
-          .setLabel('Set Channels')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('edit_auto_messages')
-          .setLabel('Edit Auto Messages')
-          .setStyle(ButtonStyle.Primary)
-      )
-    ]
-  });
-  return;
-}
+      if (interaction.customId === 'back_to_config') {
+        await interaction.update({
+          embeds: [{
+            title: 'Bot Configuration',
+            description: 'Use the buttons below to configure the bot’s settings.',
+            color: 0x5865F2
+          }],
+          components: [
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId('set_channels')
+                .setLabel('Set Channels')
+                .setStyle(ButtonStyle.Primary),
+              new ButtonBuilder()
+                .setCustomId('edit_auto_messages')
+                .setLabel('Edit Auto Messages')
+                .setStyle(ButtonStyle.Primary)
+            )
+          ]
+        });
+        return;
+      }
 
-if (interaction.customId === 'reset_auto_messages') {
-  json.welcomeMessage = "Welcome to the server, {username}!";
-  json.goodbyeMessage = "Goodbye {username}, we'll miss you!";
-  await settingsMsg.edit("```json\n" + JSON.stringify(json, null, 2) + "\n```");
-  await interaction.reply({ content: '✅ Auto messages reset to defaults.', ephemeral: true });
-  return;
-}
+      if (interaction.customId === 'reset_auto_messages') {
+        json.welcomeMessage = "Welcome to the server, {username}!";
+        json.goodbyeMessage = "Goodbye {username}, we'll miss you!";
+        await settingsMsg.edit("```json\n" + JSON.stringify(json, null, 2) + "\n```");
+        await interaction.reply({ content: '✅ Auto messages reset to defaults.', ephemeral: true });
+        return;
+      }
 
-if (interaction.customId === 'edit_welcome_message' || interaction.customId === 'edit_goodbye_message') {
-  const key = interaction.customId === 'edit_welcome_message' ? 'welcomeMessage' : 'goodbyeMessage';
-  const modal = new ModalBuilder()
-    .setCustomId(`modal_${key}`)
-    .setTitle(`Edit ${key === 'welcomeMessage' ? 'Welcome' : 'Goodbye'} Message`);
+      if (interaction.customId === 'edit_welcome_message' || interaction.customId === 'edit_goodbye_message') {
+        const key = interaction.customId === 'edit_welcome_message' ? 'welcomeMessage' : 'goodbyeMessage';
+        const modal = new ModalBuilder()
+          .setCustomId(`modal_${key}`)
+          .setTitle(`Edit ${key === 'welcomeMessage' ? 'Welcome' : 'Goodbye'} Message`);
 
-  const input = new TextInputBuilder()
-    .setCustomId('message_input')
-    .setLabel('Message Template')
-    .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder('Example: Welcome to the server, {username}!')
-    .setMinLength(5)
-    .setMaxLength(1000)
-    .setRequired(true)
-    .setValue(json[key] || (key === 'welcomeMessage' ? 'Welcome to the server, {username}!' : "Goodbye {username}, we'll miss you!"));
+        const input = new TextInputBuilder()
+          .setCustomId('message_input')
+          .setLabel('Message Template')
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder('Example: Welcome to the server, {username}!')
+          .setMinLength(5)
+          .setMaxLength(1000)
+          .setRequired(true)
+          .setValue(json[key] || (key === 'welcomeMessage' ? 'Welcome to the server, {username}!' : "Goodbye {username}, we'll miss you!"));
 
-  modal.addComponents(new ActionRowBuilder().addComponents(input));
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
 
-  await interaction.showModal(modal);
-  return;
-}
+        await interaction.showModal(modal);
+        return;
+      }
     }
 
-// MODAL SUBMISSIONS
-if (interaction.isModalSubmit()) {
-  if (interaction.customId.startsWith('modal_')) {
-    const key = interaction.customId.replace('modal_', '');
-    const newMessage = interaction.fields.getTextInputValue('message_input').trim();
+    // MODAL SUBMISSIONS
+    if (interaction.isModalSubmit()) {
+      if (interaction.customId.startsWith('modal_')) {
+        const key = interaction.customId.replace('modal_', '');
+        const newMessage = interaction.fields.getTextInputValue('message_input').trim();
 
-    if (!newMessage.includes('{username}')) {
-      await interaction.reply({ content: '❌ Your message must include the `{username}` placeholder.', ephemeral: true });
+        if (!newMessage.includes('{username}')) {
+          await interaction.reply({ content: '❌ Your message must include the `{username}` placeholder.', ephemeral: true });
+          return;
+        }
+
+        json[key] = newMessage;
+        await settingsMsg.edit("```json\n" + JSON.stringify(json, null, 2) + "\n```");
+        await interaction.reply({ content: `✅ Updated ${key === 'welcomeMessage' ? 'Welcome' : 'Goodbye'} message!`, ephemeral: true });
+        return;
+      }
+    }
+
+    // CHANNEL SELECT MENUS
+    if (interaction.isChannelSelectMenu()) {
+      const choice = interaction.values[0];
+
+      if (interaction.customId === 'welcome_channel') json.welcomeChannel = choice;
+      if (interaction.customId === 'bot_announcements') json.botAnnouncements = choice;
+      if (interaction.customId === 'mod_logs') json.modLogs = choice;
+      if (interaction.customId === 'suggestions') json.suggestions = choice;
+
+      await settingsMsg.edit("```json\n" + JSON.stringify(json, null, 2) + "\n```");
+
+      await interaction.reply({ content: `✅ Updated setting: <#${choice}>`, ephemeral: true });
       return;
     }
-
-    json[key] = newMessage;
-    await settingsMsg.edit("```json\n" + JSON.stringify(json, null, 2) + "\n```");
-    await interaction.reply({ content: `✅ Updated ${key === 'welcomeMessage' ? 'Welcome' : 'Goodbye'} message!`, ephemeral: true });
-    return;
-  }
-}
-
-// CHANNEL SELECT MENUS
-if (interaction.isChannelSelectMenu()) {
-  const choice = interaction.values[0];
-
-  if (interaction.customId === 'welcome_channel') json.welcomeChannel = choice;
-  if (interaction.customId === 'bot_announcements') json.botAnnouncements = choice;
-  if (interaction.customId === 'mod_logs') json.modLogs = choice;
-  if (interaction.customId === 'suggestions') json.suggestions = choice;
-
-  await settingsMsg.edit("```json\n" + JSON.stringify(json, null, 2) + "\n```");
-
-  await interaction.reply({ content: `✅ Updated setting: <#${choice}>`, ephemeral: true });
-  return;
-}
   });
 };
