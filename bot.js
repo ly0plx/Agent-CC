@@ -1784,17 +1784,6 @@ client.on("interactionCreate", async (interaction) => {
 //   await interaction.reply({ content: `Saved score of ${score} for <@${userId}>.`, flags: MessageFlags.Ephemeral });
 // });
 
-client.on('messageCreate', async (message) => {
-  // Ignore bot messages (important to prevent infinite loops)
-  if (message.author.bot) return;
-
-  // Check if the message content is exactly "hehe"
-  if (message.content.trim().toLowerCase() === 'hehe') {
-    await message.reply('HEHEHEHEHEHE ');
-    channels.botconsole.send(`hehe used`)
-  }
-});
-
 // Slash Command Handling
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
