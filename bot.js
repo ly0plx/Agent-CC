@@ -753,7 +753,27 @@ const allCommands = [
       },
     ],
     execute: sendMessage
+  },
+  { // cleanup - cleanup()
+    commandName1: "cleanup",
+    description: "Clean up messages in a channel",
+    adminOnly: true,
+    options: [
+      {
+        type: "string",
+        name: "ignore",
+        description: "Ignore messages from something (bot/user/none)",
+        required: false,
+        autocomplete: true,
+        choices: [
+          { name: "bot", value: "bot" },
+          { name: "user", value: "user" },
+        ],
+      },
+    ],
+    execute: cleanup
   }
+
 ];
 
 controlServer.init(client, allCommands);
@@ -1709,6 +1729,66 @@ async function sendMessage(interaction) {
     });
   }
 }
+
+async function cleanup(interaction) {
+  if (!interaction.inGuild()) {
+    return interaction.reply({ content: "This command can only be used in a server.", flags: 64 });
+  }
+
+  if (!interaction.member.permissions.has("Administrator")) {
+    return interaction.reply({ content: "Only server admins can use this command.", flags: 64 });
+  }
+
+  const ignore = interaction.options.getString("ignore"); // "bot", "user", or null
+  const channel = interaction.channel;
+
+  try {
+    await interaction.deferReply({ ephemeral: true });
+
+    let totalDeleted = 0;
+    let lastMessageId;
+
+    while (true) {
+      const options = { limit: 100 };
+      if (lastMessageId) options.before = lastMessageId;
+
+      const messages = await channel.messages.fetch(options);
+      if (!messages.size) break;
+
+      // Filter messages based on ignore
+      const toDelete = messages.filter(msg => {
+        if (!ignore) return true; // delete all
+        if (ignore === "bot") return !msg.author.bot;
+        if (ignore === "user") return msg.author.bot;
+        return true;
+      });
+      // }).map(msg => msg.id); // Here
+
+      console.log(typeof toDelete);
+
+      console.log(toDelete);
+      // Want to see what it exactly it returns
+
+      if (!toDelete.size) break;
+      const deleted = await channel.bulkDelete(toDelete, true);
+      totalDeleted += deleted.size;
+
+      // Set lastMessageId to fetch older messages next
+      lastMessageId = messages.last().id;
+
+      // Stop if less than 100 messages fetched (we reached the end)
+      if (messages.size < 100) break;
+    }
+
+    await interaction.editReply(`🧹 Deleted ${totalDeleted} messages${ignore ? ` (ignored ${ignore})` : ""}.`);
+  } catch (err) {
+    console.error("Error cleaning up messages:", err);
+    await interaction.editReply("❌ Failed to delete messages. Do I have permission?");
+  }
+}
+
+
+
 
 // #endregion
 
