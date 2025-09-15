@@ -206,7 +206,7 @@ const controlServer = {
             components: [],
           });
 
-          exec("pm2 restart discordbot", (error, stdout, stderr) => {
+          exec("pm2 restart AgentCC", (error, stdout, stderr) => {
             if (error) console.error(`❌ Restart error: ${error.message}`);
             if (stderr) console.error(`⚠️ Restart stderr: ${stderr}`);
           });
@@ -238,7 +238,7 @@ const controlServer = {
           });
 
           exec(
-            "git pull && npm install && pm2 restart discordbot",
+            "git pull && npm install && pm2 restart AgentCC",
             (err, stdout, stderr) => {
               if (err) {
                 console.error("Update error:", err);
@@ -355,7 +355,7 @@ const controlServer = {
             flags: MessageFlags.Ephemeral,
           });
 
-          exec("pm2 stop discordbot", (error, stdout, stderr) => {
+          exec("pm2 stop AgentCC", (error, stdout, stderr) => {
             if (error) {
               console.error(`❌ Stop error: ${error.message}`);
               return interaction.followUp({
@@ -433,7 +433,7 @@ const controlServer = {
             flags: MessageFlags.Ephemeral,
           });
 
-          exec("pm2 restart discordbot", (err, stdout, stderr) => {
+          exec("pm2 restart AgentCC", (err, stdout, stderr) => {
             if (err) console.error("Restart error:", err);
           });
         } catch (err) {
