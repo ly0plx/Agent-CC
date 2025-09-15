@@ -114,7 +114,15 @@ client.once("ready", async () => {
 
   // Example of sending a message at startup
   if (channels.commands) {
-    channels.botconsole.send("👋 Agent-CC is online and reporting for duty.");
+    // Get current Unix timestamp in seconds
+    const timestamp = Math.floor(Date.now() / 1000);
+
+    // Discord time formatting — e.g. <t:1699999999:F> 
+    // F = full date/time, f = short date/time, R = relative (like "in 5 minutes")
+    channels.botconsole.send(
+      `👋 Agent-CC is online and reporting for duty.\n🕒 Current time: <t:${timestamp}:f>\nRelative time: <t:${timestamp}:R>`
+    );
+
   } else {
     console.warn("⚠️ 'commands' channel not found.");
   }
