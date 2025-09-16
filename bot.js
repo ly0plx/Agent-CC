@@ -21,6 +21,7 @@ import {
   ButtonStyle,
   ChannelType,
   MessageFlags,
+  Message,
 } from "discord.js";
 import fetch from "node-fetch";
 import { PythonShell } from "python-shell";
@@ -58,6 +59,7 @@ const activeChatFeeds = new Map();
 
 // Guild Setup
 import guildSetup from './guildSetup.js';
+import { start } from "repl";
 guildSetup(client);
 
 // Welcome messages and settings
@@ -1740,18 +1742,27 @@ async function sendMessage(interaction) {
 
 async function cleanup(interaction) {
   if (!interaction.inGuild()) {
-    return interaction.reply({ content: "This command can only be used in a server.", flags: 64 });
+    return interaction.reply({
+      content: "This command can only be used in a server.",
+      ephemeral: true
+    });
   }
 
-  if (!interaction.member.permissions.has("Administrator")) {
-    return interaction.reply({ content: "Only server admins can use this command.", flags: 64 });
+  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    return interaction.reply({
+      content: "Only server admins can use this command.",
+      ephemeral: true
+    });
   }
 
-  const ignore = interaction.options.getString("ignore"); // "bot", "user", or null
+  const ignore = interaction.options.getString("ignore"); // "bot", "user" or null
   const channel = interaction.channel;
 
   try {
-    await interaction.deferReply({ ephemeral: true });
+    // lock channel while cleaning
+    const everyoneRole = interaction.guild.roles.everyone;
+    const originalOverwrite = channel.permissionOverwrites.cache.get(everyoneRole.id);
+    await channel.permissionOverwrites.edit(everyoneRole, { SendMessages: false });
 
     let totalDeleted = 0;
     let lastMessageId;
@@ -1763,41 +1774,87 @@ async function cleanup(interaction) {
       const messages = await channel.messages.fetch(options);
       if (!messages.size) break;
 
-      // Filter messages based on ignore
+      const botId = interaction.client.user.id;
+
       const toDelete = messages.filter(msg => {
-        if (!ignore) return true; // delete all
-        if (ignore === "bot") return !msg.author.bot;
-        if (ignore === "user") return msg.author.bot;
+        // if (msg.author.id === botId) return false; // skip our own messages
+        if (!ignore) return true;
+        if (ignore === 'bot') return !msg.author.bot;
+        if (ignore === 'user') return msg.author.bot;
         return true;
       });
-      // }).map(msg => msg.id); // Here
 
-      console.log(typeof toDelete);
+      // show starting embed immediately
+      const startEmbed = new EmbedBuilder()
+        .setTitle("🧹 Cleanup Started")
+        .setDescription(
+          `Cleaning messages in <#${channel.id}>${ignore ? ` (ignoring ${ignore})` : ""}…`
+        )
+        .setColor("Orange")
+        .setTimestamp();
 
-      console.log(toDelete);
-      // Want to see what it exactly it returns
+      await interaction.reply({ embeds: [startEmbed] });
 
       if (!toDelete.size) break;
-      const deleted = await channel.bulkDelete(toDelete, true);
-      totalDeleted += deleted.size;
 
-      // Set lastMessageId to fetch older messages next
+      const now = Date.now();
+      const young = toDelete.filter(m => now - m.createdTimestamp < 14 * 24 * 60 * 60 * 1000);
+      const old = toDelete.filter(m => now - m.createdTimestamp >= 14 * 24 * 60 * 60 * 1000);
+
+      if (young.size) {
+        const deleted = await channel.bulkDelete(young, true);
+        totalDeleted += deleted.size;
+      }
+
+      for (const msg of old.values()) {
+        try {
+          await msg.delete();
+          totalDeleted++;
+          await new Promise(r => setTimeout(r, 500)); // avoid rate limit
+        } catch (e) {
+          console.error(`Failed to delete message ${msg.id}:`, e);
+        }
+      }
+
       lastMessageId = messages.last().id;
-
-      // Stop if less than 100 messages fetched (we reached the end)
       if (messages.size < 100) break;
     }
 
-    await interaction.editReply(`🧹 Deleted ${totalDeleted} messages${ignore ? ` (ignored ${ignore})` : ""}.`);
+    // unlock channel
+    if (originalOverwrite) {
+      await channel.permissionOverwrites.edit(everyoneRole, {
+        SendMessages: originalOverwrite.deny.has(PermissionFlagsBits.SendMessages)
+          ? false
+          : null
+      });
+    } else {
+      await channel.permissionOverwrites.delete(everyoneRole).catch(() => { });
+    }
+
+    // finished embed + OK button
+    const endEmbed = new EmbedBuilder()
+      .setTitle("✅ Cleanup Finished")
+      .setDescription(`Deleted **${totalDeleted}** messages in <#${channel.id}>${ignore ? ` (ignoring ${ignore})` : ""}.`)
+      .setColor("Green")
+      .setTimestamp();
+
+    const okButton = new ButtonBuilder()
+      .setCustomId(`cleanup_ok_${interaction.id}`)
+      .setLabel("OK")
+      .setStyle(ButtonStyle.Success);
+
+    const row = new ActionRowBuilder().addComponents(okButton);
+
+    // edit the original reply to show finished state + OK button
+    await interaction.editReply({
+      embeds: [endEmbed],
+      components: [row]
+    });
   } catch (err) {
     console.error("Error cleaning up messages:", err);
     await interaction.editReply("❌ Failed to delete messages. Do I have permission?");
   }
 }
-
-
-
-
 // #endregion
 
 // #region Client Setup
@@ -1839,6 +1896,16 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 });
+
+client.on("interactionCreate", async i => {
+  if (!i.isButton()) return;
+
+  if (i.customId.startsWith("cleanup_ok_")) {
+    await i.deferUpdate(); // acknowledge click
+    await i.message.delete().catch(() => { }); // delete the reply embed
+  }
+});
+
 
 // client.on('interactionCreate', async interaction => {
 //   if (!interaction.isModalSubmit()) return;
