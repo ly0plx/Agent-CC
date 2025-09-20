@@ -1862,11 +1862,11 @@ async function shutdown(reason) {
   const timestamp = `<t:${Math.floor(Date.now() / 1000)}:F>`; // Discord rich timestamp
 
   try {
-    console.log(`[${new Date().toISOString()}] ⚠️ Shutting down: ${reason}`);
+    console.log(`[${new Date()}] ⚠️ Shutting down: ${reason}`);
 
     if (channels.botconsole) {
       await channels.botconsole.send(
-        `🛑 Bot shutting down...\n**Reason:** ${reason}\n**Time:** ${timestamp}`
+        `🛑 Bot shut down...\n**Reason:** ${reason}\n**Time:** ${timestamp}`
       );
     }
   } catch (err) {
@@ -1897,7 +1897,7 @@ process.on("unhandledRejection", (reason) => {
 // #region Client Setup
 
 client.on("ready", () => {
-  console.log(`🤖 Bot is online as ${client.user.tag}`);
+  console.log(`[${new Date()}] 🤖 Bot is online as ${client.user.tag}`);
   const startchat = allCommands.find((cmd) => cmd.commandName1 === "startchat");
   if (startchat && typeof startchat.listenToFeeds === "function") {
     startchat.listenToFeeds(client);
