@@ -1857,6 +1857,43 @@ async function cleanup(interaction) {
 }
 // #endregion
 
+// #region Shutdown Handling
+async function shutdown(reason) {
+  const timestamp = `<t:${Math.floor(Date.now() / 1000)}:F>`; // Discord rich timestamp
+
+  try {
+    console.log(`[${new Date().toISOString()}] ⚠️ Shutting down: ${reason}`);
+
+    if (channels.botconsole) {
+      await channels.botconsole.send(
+        `🛑 Bot shutting down...\n**Reason:** ${reason}\n**Time:** ${timestamp}`
+      );
+    }
+  } catch (err) {
+    console.error("Error during shutdown:", err);
+  } finally {
+    process.exit(0);
+  }
+}
+
+// Catch normal exits
+process.on("exit", (code) => shutdown(`Process exit with code ${code}`));
+
+// Catch Ctrl+C / kill signals
+process.on("SIGINT", () => shutdown("SIGINT (Ctrl+C)"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+// Catch uncaught exceptions/rejections
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+  shutdown("Uncaught Exception");
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Rejection:", reason);
+  shutdown("Unhandled Rejection");
+});
+// #endregion
+
 // #region Client Setup
 
 client.on("ready", () => {
